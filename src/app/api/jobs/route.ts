@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { simpleProcessor } from '@/lib/simple-processor'
+import { multiLanguageProcessor } from '@/lib/multi-language-processor'
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,14 +14,20 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Use multi-language processor if multi-language is requested
+    const processor = body.multiLanguage ? multiLanguageProcessor : simpleProcessor
+    
     // Create and process job
-    const job = await simpleProcessor.createJob({
+    const job = await processor.createJob({
       prompt: body.prompt.trim(),
       aspectRatio: body.aspectRatio || '16:9',
       duration: body.duration || 150, // 2.5 minutes default
       language: body.language || 'English',
       voiceId: body.voiceId,
       styleProfile: body.styleProfile,
+      script: body.script, // Pass the script if provided
+      multiLanguage: body.multiLanguage,
+      targetLanguages: body.targetLanguages,
     })
 
     return NextResponse.json({

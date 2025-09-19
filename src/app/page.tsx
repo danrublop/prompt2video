@@ -145,11 +145,21 @@ export default function Home() {
           <p className="text-lg text-gray-600">
             Transform your ideas into professional explainer videos with AI
           </p>
-          <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md max-w-2xl mx-auto">
+        <div className="mt-4 space-y-3">
+          <div className="p-3 bg-blue-50 border border-blue-200 rounded-md max-w-2xl mx-auto">
             <p className="text-blue-800 text-sm">
               <strong>New:</strong> Interactive storyboard editing! Review and modify your video script before generation.
             </p>
           </div>
+          <div className="p-3 bg-green-50 border border-green-200 rounded-md max-w-2xl mx-auto">
+            <p className="text-green-800 text-sm">
+              <strong>🌍 Multi-Language:</strong> Create the same video in multiple languages! 
+              <a href="/multi-language" className="text-green-600 hover:text-green-800 underline ml-1">
+                Try Multi-Language Video Generator
+              </a>
+            </p>
+          </div>
+        </div>
         </div>
 
         {/* Main Content */}

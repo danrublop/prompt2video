@@ -62,6 +62,32 @@ Once you confirm the storyboard, the system generates all assets:
 - **Custom branding** and styling options
 - **Multiple format support** (16:9, 9:16, 1:1)
 
+## 🌍 Multi-Language Workflow
+
+### Step 1: Multi-Language Setup
+- **Select primary language** - Choose the main language for script generation
+- **Choose target languages** - Pick from 100+ supported languages
+- **Organized selection** - Browse by region (European, Asian, Middle Eastern, etc.)
+- **Popular languages** - Quick access to most commonly used languages
+
+### Step 2: Content Generation
+- **Single script generation** - Create script in primary language
+- **Shared visual assets** - Same images and composition for all languages
+- **Parallel audio processing** - Generate narration for each target language simultaneously
+- **Language-specific voices** - Use appropriate voice characteristics for each language
+
+### Step 3: Video Composition
+- **Individual video files** - Separate MP4 for each language
+- **Consistent visual quality** - Identical composition across all versions
+- **Localized audio tracks** - Native language narration for each version
+- **Batch processing** - Efficient generation of multiple language versions
+
+### Step 4. Multi-Language Results
+- **Download all versions** - Individual download links for each language
+- **Progress tracking** - Real-time status for each language generation
+- **Error handling** - Graceful handling of failed language generations
+- **Cost optimization** - Shared visual generation reduces overall costs
+
 ## 🎯 Key Features
 
 ### Interactive Storyboard Workflow
@@ -69,6 +95,14 @@ Once you confirm the storyboard, the system generates all assets:
 - **Real-time preview** - See exactly what your video will contain
 - **Cost control** - Avoid regenerating entire videos for small changes
 - **Quality assurance** - Ensure content meets your requirements
+
+### Multi-Language Video Generation 🌍
+- **100+ supported languages** - Generate videos in any HeyGen-supported language
+- **Same visual content** - All language versions use identical images and composition
+- **Localized audio** - Native language narration with appropriate voice characteristics
+- **Batch processing** - Generate multiple language versions simultaneously
+- **Organized language groups** - Easy selection by region (European, Asian, etc.)
+- **Progress tracking** - Real-time status for each language version
 
 ### AI-Powered Content Creation
 - **Intelligent script generation** - Context-aware video planning

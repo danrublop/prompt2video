@@ -109,11 +109,21 @@ export default function DemoVideoGenerator() {
           <p className="text-lg text-gray-600">
             Test the app without API keys - This is a demonstration mode
           </p>
-          <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-md">
-            <p className="text-yellow-800 text-sm">
-              <strong>Demo Mode:</strong> This version uses mock data and simulated responses. 
-              No real videos are generated. Add your API keys to the main app for real video generation.
-            </p>
+          <div className="mt-4 space-y-3">
+            <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-md">
+              <p className="text-yellow-800 text-sm">
+                <strong>Demo Mode:</strong> This version uses mock data and simulated responses. 
+                No real videos are generated. Add your API keys to the main app for real video generation.
+              </p>
+            </div>
+            <div className="p-3 bg-green-50 border border-green-200 rounded-md">
+              <p className="text-green-800 text-sm">
+                <strong>🌍 Multi-Language:</strong> Create the same video in multiple languages! 
+                <a href="/multi-language" className="text-green-600 hover:text-green-800 underline ml-1">
+                  Try Multi-Language Video Generator
+                </a>
+              </p>
+            </div>
           </div>
         </div>
 

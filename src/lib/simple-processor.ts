@@ -14,6 +14,8 @@ export interface CreateJobRequest {
   voiceId?: string
   styleProfile?: string
   script?: any // Pre-generated script from storyboard
+  multiLanguage?: boolean
+  targetLanguages?: string[]
 }
 
 export interface JobResponse {

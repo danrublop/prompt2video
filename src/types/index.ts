@@ -4,6 +4,8 @@ export interface CreateJobRequest {
   duration?: number // in seconds
   language?: string
   voiceId?: string
+  multiLanguage?: boolean
+  targetLanguages?: string[]
 }
 
 export interface JobResponse {
@@ -21,6 +23,18 @@ export interface JobResponse {
   updatedAt: string
   steps: StepResponse[]
   assets: AssetResponse[]
+  multiLanguage?: boolean
+  targetLanguages?: string[]
+  languageVideos?: LanguageVideo[]
+}
+
+export interface LanguageVideo {
+  language: string
+  languageName: string
+  nativeName: string
+  videoUrl: string
+  status: 'PENDING' | 'RUNNING' | 'FAILED' | 'DONE'
+  error?: string
 }
 
 export interface StepResponse {
