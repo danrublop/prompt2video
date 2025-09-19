@@ -12,6 +12,8 @@ export class MultiLanguageProcessor {
   private processingJobs: Set<string> = new Set()
 
   async createJob(data: CreateJobRequest): Promise<JobResponse> {
+    console.log('Creating multi-language job with data:', data)
+    
     const job = await memoryStorage.createJob({
       prompt: data.prompt,
       aspectRatio: data.aspectRatio || '16:9',
@@ -25,6 +27,8 @@ export class MultiLanguageProcessor {
       targetLanguages: data.targetLanguages || []
     })
 
+    console.log('Multi-language job created with ID:', job.id)
+
     // Start processing immediately
     this.processJob(job.id)
 
@@ -32,9 +36,14 @@ export class MultiLanguageProcessor {
   }
 
   async getJob(jobId: string): Promise<JobResponse | null> {
+    console.log('Multi-language processor looking for job:', jobId)
     const job = await memoryStorage.getJob(jobId)
-    if (!job) return null
+    if (!job) {
+      console.log('Job not found in multi-language processor:', jobId)
+      return null
+    }
 
+    console.log('Job found in multi-language processor:', job.id, job.status)
     return this.jobToResponse(job)
   }
 
@@ -199,7 +208,7 @@ export class MultiLanguageProcessor {
             aspectRatio: job.aspectRatio as '16:9' | '9:16' | '1:1',
             scenes: audioAssets.map((asset, i) => ({
               sceneId: asset.scene.sceneId,
-              imageBuffer: asset.imageBuffer,
+              imageBuffer: imageAssets[i].imageBuffer, // Get imageBuffer from imageAssets
               videoBuffer: null,
               audioBuffer: asset.audioBuffer,
               caption: asset.scene.caption,
@@ -268,10 +277,14 @@ export class MultiLanguageProcessor {
     } catch (error) {
       console.error(`Multi-language job ${jobId} failed:`, error)
       
-      await memoryStorage.updateJob(jobId, { 
-        status: 'FAILED',
-        totalCost: 0
-      })
+      try {
+        await memoryStorage.updateJob(jobId, { 
+          status: 'FAILED',
+          totalCost: 0
+        })
+      } catch (updateError) {
+        console.error(`Failed to update job status for ${jobId}:`, updateError)
+      }
     } finally {
       this.processingJobs.delete(jobId)
     }
