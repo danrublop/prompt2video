@@ -33,8 +33,10 @@ export default function StoryboardPage() {
   const prompt = searchParams.get('prompt') || ''
   const aspectRatio = searchParams.get('aspectRatio') || '16:9'
   const duration = parseInt(searchParams.get('duration') || '150')
-  const language = searchParams.get('language') || 'English'
+  const language = searchParams.get('language') || 'en-US'
   const voiceId = searchParams.get('voiceId') || ''
+  const multiLanguage = searchParams.get('multiLanguage') === 'true'
+  const targetLanguages = searchParams.get('targetLanguages')?.split(',') || []
 
   useEffect(() => {
     if (prompt) {
@@ -116,6 +118,8 @@ export default function StoryboardPage() {
           language,
           voiceId: voiceId || undefined,
           script: editedScript, // Pass the edited script
+          multiLanguage,
+          targetLanguages,
         }),
       })
 
@@ -232,6 +236,11 @@ export default function StoryboardPage() {
             {script && script.demo && (
               <p className="text-yellow-800 text-sm mt-2 font-medium">
                 🎭 Demo Mode: This is using mock data. Add your API keys for real video generation.
+              </p>
+            )}
+            {multiLanguage && (
+              <p className="text-green-800 text-sm mt-2 font-medium">
+                🌍 Multi-Language: This video will be generated in {targetLanguages.length} language{targetLanguages.length !== 1 ? 's' : ''}: {targetLanguages.join(', ')}
               </p>
             )}
           </div>

@@ -3,14 +3,18 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { JobResponse, CreateJobRequest } from '@/types'
+import { SUPPORTED_LANGUAGES, LANGUAGE_GROUPS, getLanguageByCode } from '@/lib/languages'
 
 export default function Home() {
   const searchParams = useSearchParams()
   const [prompt, setPrompt] = useState('')
   const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16' | '1:1'>('16:9')
   const [duration, setDuration] = useState(150) // 2.5 minutes in seconds
-  const [language, setLanguage] = useState('English')
+  const [language, setLanguage] = useState('en-US')
   const [voiceId, setVoiceId] = useState('')
+  const [multiLanguage, setMultiLanguage] = useState(false)
+  const [selectedLanguages, setSelectedLanguages] = useState<string[]>(['en-US'])
+  const [showLanguageSelector, setShowLanguageSelector] = useState(false)
   const [currentJob, setCurrentJob] = useState<JobResponse | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
   const [isLoadingJob, setIsLoadingJob] = useState(false)
@@ -29,9 +33,24 @@ export default function Home() {
     }
   }, [searchParams])
 
+  const handleLanguageToggle = (langCode: string) => {
+    if (selectedLanguages.includes(langCode)) {
+      if (selectedLanguages.length > 1) { // Don't allow removing all languages
+        setSelectedLanguages(selectedLanguages.filter(lang => lang !== langCode))
+      }
+    } else {
+      setSelectedLanguages([...selectedLanguages, langCode])
+    }
+  }
+
   const createJob = async () => {
     if (!prompt.trim()) {
       setError('Please enter a prompt')
+      return
+    }
+    
+    if (multiLanguage && selectedLanguages.length === 0) {
+      setError('Please select at least one language for multi-language generation')
       return
     }
 
@@ -42,6 +61,8 @@ export default function Home() {
       duration: duration.toString(),
       language,
       voiceId: voiceId.trim() || '',
+      multiLanguage: multiLanguage.toString(),
+      targetLanguages: selectedLanguages.join(','),
     })
 
     window.location.href = `/storyboard?${params.toString()}`
@@ -153,10 +174,7 @@ export default function Home() {
           </div>
           <div className="p-3 bg-green-50 border border-green-200 rounded-md max-w-2xl mx-auto">
             <p className="text-green-800 text-sm">
-              <strong>🌍 Multi-Language:</strong> Create the same video in multiple languages! 
-              <a href="/multi-language" className="text-green-600 hover:text-green-800 underline ml-1">
-                Try Multi-Language Video Generator
-              </a>
+              <strong>🌍 Multi-Language:</strong> Now integrated! Check the "Generate in multiple languages" option below to create videos in multiple languages simultaneously.
             </p>
           </div>
         </div>
@@ -217,24 +235,111 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Language
-                  </label>
-                  <select
-                    value={language}
-                    onChange={(e) => setLanguage(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              <div className="space-y-4">
+                {/* Multi-Language Toggle */}
+                <div className="flex items-center space-x-3">
+                  <input
+                    type="checkbox"
+                    id="multiLanguage"
+                    checked={multiLanguage}
+                    onChange={(e) => setMultiLanguage(e.target.checked)}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                     disabled={isGenerating}
-                  >
-                    <option value="English">English</option>
-                    <option value="Spanish">Spanish</option>
-                    <option value="French">French</option>
-                    <option value="German">German</option>
-                  </select>
+                  />
+                  <label htmlFor="multiLanguage" className="text-sm font-medium text-gray-700">
+                    Generate in multiple languages 🌍
+                  </label>
                 </div>
 
+                {/* Language Selection */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {multiLanguage ? 'Target Languages' : 'Language'}
+                  </label>
+                  
+                  {multiLanguage ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-600">
+                          {selectedLanguages.length} language{selectedLanguages.length !== 1 ? 's' : ''} selected
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setShowLanguageSelector(!showLanguageSelector)}
+                          className="text-blue-600 hover:text-blue-800 text-sm"
+                        >
+                          {showLanguageSelector ? 'Hide Languages' : 'Select Languages'}
+                        </button>
+                      </div>
+                      
+                      {showLanguageSelector && (
+                        <div className="border border-gray-300 rounded-md p-4 max-h-64 overflow-y-auto">
+                          <div className="space-y-4">
+                            {Object.entries(LANGUAGE_GROUPS).map(([groupName, languageCodes]) => (
+                              <div key={groupName}>
+                                <h4 className="font-medium text-sm text-gray-700 mb-2">{groupName}</h4>
+                                <div className="grid grid-cols-2 gap-2">
+                                  {languageCodes.map((langCode) => {
+                                    const lang = getLanguageByCode(langCode)
+                                    if (!lang) return null
+                                    return (
+                                      <label key={langCode} className="flex items-center space-x-2 text-sm">
+                                        <input
+                                          type="checkbox"
+                                          checked={selectedLanguages.includes(langCode)}
+                                          onChange={() => handleLanguageToggle(langCode)}
+                                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                        />
+                                        <span>{lang.name}</span>
+                                      </label>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex flex-wrap gap-2">
+                        {selectedLanguages.map((langCode) => {
+                          const lang = getLanguageByCode(langCode)
+                          if (!lang) return null
+                          return (
+                            <span
+                              key={langCode}
+                              className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                            >
+                              {lang.name}
+                              <button
+                                type="button"
+                                onClick={() => handleLanguageToggle(langCode)}
+                                className="ml-2 text-blue-600 hover:text-blue-800"
+                              >
+                                ×
+                              </button>
+                            </span>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ) : (
+                    <select
+                      value={language}
+                      onChange={(e) => setLanguage(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      disabled={isGenerating}
+                    >
+                      {SUPPORTED_LANGUAGES.slice(0, 20).map((lang) => (
+                        <option key={lang.code} value={lang.code}>
+                          {lang.name} ({lang.nativeName})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                {/* Voice ID */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Voice ID (optional)
@@ -259,10 +364,13 @@ export default function Home() {
               <div className="space-y-2">
                 <button
                   onClick={createJob}
-                  disabled={!prompt.trim()}
+                  disabled={!prompt.trim() || (multiLanguage && selectedLanguages.length === 0)}
                   className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
                 >
-                  Create Storyboard
+                  {multiLanguage 
+                    ? `Create Storyboard (${selectedLanguages.length} language${selectedLanguages.length !== 1 ? 's' : ''})`
+                    : 'Create Storyboard'
+                  }
                 </button>
                 
                 {isGenerating && (
