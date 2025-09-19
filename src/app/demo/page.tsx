@@ -50,6 +50,11 @@ export default function DemoVideoGenerator() {
       }
       const jobData = await response.json()
       console.log('Job data received:', jobData)
+      console.log('Multi-language check:', {
+        multiLanguage: jobData.multiLanguage,
+        languageVideos: jobData.languageVideos,
+        languageVideosLength: jobData.languageVideos?.length || 0
+      })
       setCurrentJob(jobData)
       
       // If job is done, show results

@@ -38,6 +38,16 @@ export default function StoryboardPage() {
   const multiLanguage = searchParams.get('multiLanguage') === 'true'
   const targetLanguages = searchParams.get('targetLanguages')?.split(',') || []
 
+  console.log('Storyboard page parameters:', {
+    prompt,
+    aspectRatio,
+    duration,
+    language,
+    voiceId,
+    multiLanguage,
+    targetLanguages
+  })
+
   useEffect(() => {
     if (prompt) {
       generateScript()
