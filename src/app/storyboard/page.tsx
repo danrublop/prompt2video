@@ -48,6 +48,40 @@ export default function StoryboardPage() {
     targetLanguages
   })
 
+  // Generate mock translations for multi-language mode
+  const generateMockTranslations = (text: string, targetLanguages: string[]) => {
+    const translations: { [key: string]: string } = {}
+    
+    targetLanguages.forEach(langCode => {
+      // Simple mock translation based on language code
+      if (langCode.startsWith('es')) {
+        translations[langCode] = `[ES] ${text}`
+      } else if (langCode.startsWith('fr')) {
+        translations[langCode] = `[FR] ${text}`
+      } else if (langCode.startsWith('de')) {
+        translations[langCode] = `[DE] ${text}`
+      } else if (langCode.startsWith('it')) {
+        translations[langCode] = `[IT] ${text}`
+      } else if (langCode.startsWith('pt')) {
+        translations[langCode] = `[PT] ${text}`
+      } else if (langCode.startsWith('zh')) {
+        translations[langCode] = `[中文] ${text}`
+      } else if (langCode.startsWith('ja')) {
+        translations[langCode] = `[日本語] ${text}`
+      } else if (langCode.startsWith('ko')) {
+        translations[langCode] = `[한국어] ${text}`
+      } else if (langCode.startsWith('ru')) {
+        translations[langCode] = `[Русский] ${text}`
+      } else if (langCode.startsWith('ar')) {
+        translations[langCode] = `[العربية] ${text}`
+      } else {
+        translations[langCode] = `[${langCode.toUpperCase()}] ${text}`
+      }
+    })
+    
+    return translations
+  }
+
   useEffect(() => {
     if (prompt) {
       generateScript()
@@ -291,7 +325,7 @@ export default function StoryboardPage() {
                   
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Narration
+                      Narration {multiLanguage && targetLanguages.length > 0 ? '(Primary Language)' : ''}
                     </label>
                     <textarea
                       value={scene.narration}
@@ -299,6 +333,27 @@ export default function StoryboardPage() {
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                       rows={3}
                     />
+                    {multiLanguage && targetLanguages.length > 0 && (
+                      <div className="mt-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Translations Preview
+                        </label>
+                        <div className="space-y-2">
+                          {targetLanguages.map((langCode) => {
+                            const translations = generateMockTranslations(scene.narration, [langCode])
+                            const translation = translations[langCode]
+                            return (
+                              <div key={langCode} className="bg-blue-50 rounded-md p-2 border border-blue-200">
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="text-xs font-medium text-blue-800">{langCode.toUpperCase()}</span>
+                                </div>
+                                <p className="text-gray-700 text-xs">{translation}</p>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                   
                   <div>
@@ -343,10 +398,30 @@ export default function StoryboardPage() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <div className="bg-gray-50 rounded-md p-4">
-                    <h4 className="font-medium text-gray-900 mb-2">Narration</h4>
-                    <p className="text-gray-700">{scene.narration}</p>
-                  </div>
+                  {/* Multi-Language Narration Display */}
+                  {multiLanguage && targetLanguages.length > 0 ? (
+                    <div className="space-y-3">
+                      <h4 className="font-medium text-gray-900 mb-2">Narration (Multi-Language)</h4>
+                      {targetLanguages.map((langCode) => {
+                        const translations = generateMockTranslations(scene.narration, [langCode])
+                        const translation = translations[langCode]
+                        return (
+                          <div key={langCode} className="bg-gray-50 rounded-md p-3 border-l-4 border-blue-200">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-sm font-medium text-blue-800">{langCode.toUpperCase()}</span>
+                              <span className="text-xs text-gray-500">{scene.duration}s</span>
+                            </div>
+                            <p className="text-gray-700 text-sm">{translation}</p>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <div className="bg-gray-50 rounded-md p-4">
+                      <h4 className="font-medium text-gray-900 mb-2">Narration</h4>
+                      <p className="text-gray-700">{scene.narration}</p>
+                    </div>
+                  )}
                   
                   <div className="bg-gray-50 rounded-md p-4">
                     <h4 className="font-medium text-gray-900 mb-2">On-Screen Caption</h4>
