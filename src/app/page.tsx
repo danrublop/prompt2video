@@ -1,103 +1,429 @@
-import Image from "next/image";
+'use client'
+
+import { useState, useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
+import { JobResponse, CreateJobRequest } from '@/types'
 
 export default function Home() {
-  return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const searchParams = useSearchParams()
+  const [prompt, setPrompt] = useState('')
+  const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16' | '1:1'>('16:9')
+  const [duration, setDuration] = useState(150) // 2.5 minutes in seconds
+  const [language, setLanguage] = useState('English')
+  const [voiceId, setVoiceId] = useState('')
+  const [currentJob, setCurrentJob] = useState<JobResponse | null>(null)
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [isLoadingJob, setIsLoadingJob] = useState(false)
+  const [error, setError] = useState('')
+  const [abortController, setAbortController] = useState<AbortController | null>(null)
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  // Check for job ID in URL parameters
+  useEffect(() => {
+    const jobId = searchParams.get('jobId')
+    if (jobId) {
+      console.log('Found job ID in URL:', jobId)
+      // Add a small delay to ensure job is fully created
+      setTimeout(() => {
+        fetchJobStatus(jobId)
+      }, 1000)
+    }
+  }, [searchParams])
+
+  const createJob = async () => {
+    if (!prompt.trim()) {
+      setError('Please enter a prompt')
+      return
+    }
+
+    // Redirect to storyboard page instead of creating job directly
+    const params = new URLSearchParams({
+      prompt: prompt.trim(),
+      aspectRatio,
+      duration: duration.toString(),
+      language,
+      voiceId: voiceId.trim() || '',
+    })
+
+    window.location.href = `/storyboard?${params.toString()}`
+  }
+
+  const fetchJobStatus = async (jobId: string) => {
+    setIsLoadingJob(true)
+    try {
+      console.log('Fetching job status for:', jobId)
+      const response = await fetch(`/api/jobs/${jobId}`, {
+        signal: abortController?.signal,
+      })
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('Job fetch failed:', response.status, errorText)
+        throw new Error(`Failed to fetch job status: ${response.status} ${errorText}`)
+      }
+      const jobData = await response.json()
+      console.log('Job data received:', jobData)
+      setCurrentJob(jobData)
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        console.log('Job status fetch cancelled')
+      } else {
+        console.error('Error fetching job status:', err)
+        setError(err instanceof Error ? err.message : 'Failed to fetch job status')
+      }
+    } finally {
+      setIsLoadingJob(false)
+    }
+  }
+
+  const cancelJob = () => {
+    if (abortController) {
+      abortController.abort()
+      setAbortController(null)
+      setIsGenerating(false)
+      setCurrentJob(null)
+      setError('Request cancelled')
+    }
+  }
+
+  // Poll for job status updates
+  useEffect(() => {
+    if (!currentJob || currentJob.status === 'DONE' || currentJob.status === 'FAILED') {
+      return
+    }
+
+    const interval = setInterval(() => {
+      fetchJobStatus(currentJob.id)
+    }, 2500) // Poll every 2.5 seconds
+
+    return () => clearInterval(interval)
+  }, [currentJob?.id, currentJob?.status])
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (abortController) {
+        abortController.abort()
+      }
+    }
+  }, [abortController])
+
+  const resetForm = () => {
+    if (abortController) {
+      abortController.abort()
+    }
+    setCurrentJob(null)
+    setPrompt('')
+    setError('')
+    setAbortController(null)
+    setIsGenerating(false)
+  }
+
+  const getStepStatus = (stepType: string) => {
+    if (!currentJob || !currentJob.steps) return 'PENDING'
+    const step = currentJob.steps.find(s => s.type === stepType)
+    return step?.status || 'PENDING'
+  }
+
+  const getStepIcon = (status: string) => {
+    switch (status) {
+      case 'DONE':
+        return '✅'
+      case 'RUNNING':
+        return '⏳'
+      case 'FAILED':
+        return '❌'
+      default:
+        return '⏸️'
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-4xl mx-auto px-4 py-8">
+        {/* Header */}
+        <div className="text-center mb-8">
+          <h1 className="text-4xl font-bold text-gray-900 mb-2">Prompt2Video</h1>
+          <p className="text-lg text-gray-600">
+            Transform your ideas into professional explainer videos with AI
+          </p>
+          <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md max-w-2xl mx-auto">
+            <p className="text-blue-800 text-sm">
+              <strong>New:</strong> Interactive storyboard editing! Review and modify your video script before generation.
+            </p>
+          </div>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
+
+        {/* Main Content */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Input Form */}
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <h2 className="text-xl font-semibold text-gray-900 mb-4">Create Your Video</h2>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Prompt
+                </label>
+                <textarea
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  placeholder="Describe what you want your video to explain..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  rows={4}
+                  disabled={isGenerating}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Aspect Ratio
+                  </label>
+                  <select
+                    value={aspectRatio}
+                    onChange={(e) => setAspectRatio(e.target.value as '16:9' | '9:16' | '1:1')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    disabled={isGenerating}
+                  >
+                    <option value="16:9">16:9 (Landscape)</option>
+                    <option value="9:16">9:16 (Portrait)</option>
+                    <option value="1:1">1:1 (Square)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Duration (minutes)
+                  </label>
+                  <select
+                    value={duration / 60}
+                    onChange={(e) => setDuration(parseInt(e.target.value) * 60)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    disabled={isGenerating}
+                  >
+                    <option value={2}>2 minutes</option>
+                    <option value={2.5}>2.5 minutes</option>
+                    <option value={3}>3 minutes</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Language
+                  </label>
+                  <select
+                    value={language}
+                    onChange={(e) => setLanguage(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    disabled={isGenerating}
+                  >
+                    <option value="English">English</option>
+                    <option value="Spanish">Spanish</option>
+                    <option value="French">French</option>
+                    <option value="German">German</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Voice ID (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={voiceId}
+                    onChange={(e) => setVoiceId(e.target.value)}
+                    placeholder="Leave empty for default"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    disabled={isGenerating}
+                  />
+                </div>
+              </div>
+
+              {error && (
+                <div className="bg-red-50 border border-red-200 rounded-md p-3">
+                  <p className="text-red-600 text-sm">{error}</p>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <button
+                  onClick={createJob}
+                  disabled={!prompt.trim()}
+                  className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                >
+                  Create Storyboard
+                </button>
+                
+                {isGenerating && (
+                  <button
+                    onClick={cancelJob}
+                    className="w-full bg-red-600 text-white py-2 px-4 rounded-md hover:bg-red-700 transition-colors"
+                  >
+                    Cancel Request
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Job Status */}
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <h2 className="text-xl font-semibold text-gray-900 mb-4">Job Status</h2>
+            
+            {isLoadingJob ? (
+              <div className="text-center text-gray-500 py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                Loading job status...
+              </div>
+            ) : !currentJob ? (
+              <div className="text-center text-gray-500 py-8">
+                No active job. Create a video to see the status here.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Job Info */}
+                <div className="bg-gray-50 rounded-md p-4">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="font-medium">Job ID:</span>
+                    <span className="text-sm text-gray-600 font-mono">{currentJob.id}</span>
+                  </div>
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="font-medium">Status:</span>
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                      currentJob.status === 'DONE' ? 'bg-green-100 text-green-800' :
+                      currentJob.status === 'FAILED' ? 'bg-red-100 text-red-800' :
+                      currentJob.status === 'RUNNING' ? 'bg-blue-100 text-blue-800' :
+                      'bg-gray-100 text-gray-800'
+                    }`}>
+                      {currentJob.status}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="font-medium">Cost:</span>
+                    <span className="text-sm text-gray-600">${(currentJob.totalCost || 0).toFixed(4)}</span>
+                  </div>
+                </div>
+
+                {/* Steps Timeline */}
+                <div className="space-y-3">
+                  <h3 className="font-medium text-gray-900">Pipeline Steps</h3>
+                  
+                  {['SCRIPT', 'IMAGES', 'NARRATION', 'COMPOSITION'].map((stepType) => {
+                    const status = getStepStatus(stepType)
+                    return (
+                      <div key={stepType} className="flex items-center space-x-3">
+                        <span className="text-lg">{getStepIcon(status)}</span>
+                        <span className="flex-1 text-sm font-medium text-gray-700">
+                          {stepType.charAt(0) + stepType.slice(1).toLowerCase()}
+                        </span>
+                        <span className={`text-xs px-2 py-1 rounded-full ${
+                          status === 'DONE' ? 'bg-green-100 text-green-800' :
+                          status === 'FAILED' ? 'bg-red-100 text-red-800' :
+                          status === 'RUNNING' ? 'bg-blue-100 text-blue-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                          {status}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {/* Results */}
+                {currentJob.status === 'DONE' && currentJob.resultUrl && (
+                  <div className="space-y-4">
+                    <h3 className="font-medium text-gray-900">Your Video</h3>
+                    
+                    <video
+                      controls
+                      className="w-full rounded-md"
+                      src={currentJob.resultUrl}
+                    >
+                      Your browser does not support the video tag.
+                    </video>
+
+                    <div className="flex space-x-2">
+                      <a
+                        href={currentJob.resultUrl}
+                        download
+                        className="flex-1 bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 text-center transition-colors"
+                      >
+                        Download Video
+                      </a>
+                      <button
+                        onClick={resetForm}
+                        className="flex-1 bg-gray-600 text-white py-2 px-4 rounded-md hover:bg-gray-700 transition-colors"
+                      >
+                        Create Another
+                      </button>
+                    </div>
+
+                    {/* Assets */}
+                    {currentJob.assets && currentJob.assets.length > 0 && (
+                      <div>
+                        <h4 className="font-medium text-gray-900 mb-2">Assets</h4>
+                        <div className="space-y-2">
+                          {currentJob.assets.map((asset) => (
+                            <div key={asset.id} className="flex items-center justify-between bg-gray-50 rounded-md p-2">
+                              <div className="flex items-center space-x-2">
+                                <span className="text-sm text-gray-700">
+                                  {asset.kind.toLowerCase()} - {asset.meta?.sceneId || 'unknown'}
+                                </span>
+                                {asset.kind === 'VIDEO' && (
+                                  <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                                    AI Generated
+                                  </span>
+                                )}
+        </div>
         <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
+                                href={asset.url}
           target="_blank"
           rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+                                className="text-blue-600 hover:text-blue-800 text-sm"
+                              >
+                                {asset.kind === 'VIDEO' ? 'Play' : 'View'}
+                              </a>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {currentJob.status === 'FAILED' && (
+                  <div className="bg-red-50 border border-red-200 rounded-md p-3">
+                    <p className="text-red-600 text-sm">
+                      Job failed. Please try again with a different prompt.
+                    </p>
+                    <button
+                      onClick={resetForm}
+                      className="mt-2 bg-red-600 text-white py-1 px-3 rounded text-sm hover:bg-red-700 transition-colors"
+                    >
+                      Try Again
+                    </button>
+                  </div>
+                )}
+
+                {(currentJob.status === 'QUEUED' || currentJob.status === 'RUNNING') && (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
+                    <p className="text-yellow-800 text-sm mb-2">
+                      Job is {currentJob.status.toLowerCase()}. This may take several minutes.
+                    </p>
+                    <button
+                      onClick={cancelJob}
+                      className="bg-yellow-600 text-white py-1 px-3 rounded text-sm hover:bg-yellow-700 transition-colors"
+                    >
+                      Cancel Job
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
-  );
+  )
 }
