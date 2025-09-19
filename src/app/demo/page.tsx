@@ -25,6 +25,8 @@ export default function DemoVideoGenerator() {
     duration: number
     demo: boolean
     message: string
+    multiLanguage?: boolean
+    languageVideos?: any[]
   } | null>(null)
 
   // Check for job ID in URL parameters
@@ -52,14 +54,30 @@ export default function DemoVideoGenerator() {
       
       // If job is done, show results
       if (jobData.status === 'DONE') {
-        setResult({
-          video: jobData.resultUrl || 'mock-video-url',
-          script: jobData.steps?.find((s: any) => s.type === 'SCRIPT')?.payload || { scenes: [] },
-          totalCost: jobData.totalCost || 0,
-          duration: jobData.duration || 150,
-          demo: true,
-          message: "Demo video generated successfully! (This is mock data - add API keys for real generation)"
-        })
+        const script = jobData.steps?.find((s: any) => s.type === 'SCRIPT')?.payload || { scenes: [] }
+        
+        // Check if this is a multi-language job
+        if (jobData.multiLanguage && jobData.languageVideos && jobData.languageVideos.length > 0) {
+          setResult({
+            video: jobData.resultUrl || 'mock-video-url',
+            script: script,
+            totalCost: jobData.totalCost || 0,
+            duration: jobData.duration || 150,
+            demo: true,
+            message: `Demo videos generated successfully in ${jobData.languageVideos.length} language${jobData.languageVideos.length !== 1 ? 's' : ''}! (This is mock data - add API keys for real generation)`,
+            multiLanguage: true,
+            languageVideos: jobData.languageVideos
+          })
+        } else {
+          setResult({
+            video: jobData.resultUrl || 'mock-video-url',
+            script: script,
+            totalCost: jobData.totalCost || 0,
+            duration: jobData.duration || 150,
+            demo: true,
+            message: "Demo video generated successfully! (This is mock data - add API keys for real generation)"
+          })
+        }
       }
     } catch (err) {
       console.error('Error fetching job status:', err)
@@ -442,6 +460,41 @@ export default function DemoVideoGenerator() {
                   </div>
                 </div>
 
+                {/* Multi-Language Videos */}
+                {result.multiLanguage && result.languageVideos && (
+                  <div>
+                    <h3 className="font-medium text-gray-900 mb-2">Generated Videos</h3>
+                    <div className="space-y-3">
+                      {result.languageVideos.map((langVideo: any, index: number) => (
+                        <div key={index} className="bg-gray-50 rounded-md p-3 border">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <div className="font-medium text-sm text-gray-900">{langVideo.languageName}</div>
+                              <div className="text-xs text-gray-500">{langVideo.nativeName}</div>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <span className={`text-xs px-2 py-1 rounded-full ${
+                                langVideo.status === 'DONE' ? 'bg-green-100 text-green-800' :
+                                langVideo.status === 'FAILED' ? 'bg-red-100 text-red-800' :
+                                langVideo.status === 'RUNNING' ? 'bg-blue-100 text-blue-800' :
+                                'bg-gray-100 text-gray-800'
+                              }`}>
+                                {langVideo.status}
+                              </span>
+                              {langVideo.status === 'DONE' && (
+                                <span className="text-xs text-green-600">✓ Ready</span>
+                              )}
+                            </div>
+                          </div>
+                          {langVideo.error && (
+                            <div className="mt-2 text-xs text-red-600">{langVideo.error}</div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Video Info */}
                 <div className="bg-gray-50 rounded-md p-4">
                   <h4 className="font-medium text-gray-900 mb-2">Video Details (Simulated)</h4>
@@ -450,7 +503,11 @@ export default function DemoVideoGenerator() {
                     <div>Estimated Cost: ${result.totalCost.toFixed(4)}</div>
                     <div>Scenes: {result.script.scenes.length}</div>
                     <div>Aspect Ratio: {aspectRatio}</div>
-                    <div>Language: {language}</div>
+                    {result.multiLanguage ? (
+                      <div>Languages: {result.languageVideos?.length || 0} ({result.languageVideos?.map((lv: any) => lv.languageName).join(', ')})</div>
+                    ) : (
+                      <div>Language: {language}</div>
+                    )}
                   </div>
                 </div>
 
