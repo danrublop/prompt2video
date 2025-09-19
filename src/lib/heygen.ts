@@ -110,3 +110,4 @@ export class HeyGenClient {
 }
 
 export const heygenClient = new HeyGenClient()
+

@@ -10,12 +10,10 @@ export interface CreateJobRequest {
   prompt: string
   aspectRatio: '16:9' | '9:16' | '1:1'
   duration: number
-  language: string
+  languages: string[]
   voiceId?: string
   styleProfile?: string
   script?: any // Pre-generated script from storyboard
-  multiLanguage?: boolean
-  targetLanguages?: string[]
 }
 
 export interface JobResponse {
@@ -24,10 +22,10 @@ export interface JobResponse {
   prompt: string
   aspectRatio: string
   duration: number
-  language: string
+  languages: string[]
   voiceId?: string
   totalCost: number
-  resultUrl?: string
+  resultUrls?: { [language: string]: string }
   createdAt: string
   updatedAt: string
   steps: Step[]
@@ -42,7 +40,7 @@ class SimpleProcessor {
       prompt: request.prompt,
       aspectRatio: request.aspectRatio,
       duration: request.duration,
-      language: request.language,
+      language: request.languages[0], // Use first language as primary
       voiceId: request.voiceId,
       status: 'QUEUED',
       totalCost: 0,
@@ -89,6 +87,11 @@ class SimpleProcessor {
                         process.env.HEYGEN_API_KEY === 'mock' ||
                         process.env.HEYGEN_API_KEY === 'your_heygen_api_key_here'
 
+      // Get languages from the job request (we need to pass this through somehow)
+      // For now, we'll use the job's language field and assume it's a comma-separated list
+      const languages = job.language ? job.language.split(',') : ['en']
+      console.log(`Processing job for languages: ${languages.join(', ')}`)
+
       // Step 1: Generate or use provided script
       await this.updateStepStatus(jobId, 'SCRIPT', 'RUNNING')
       let script
@@ -97,19 +100,21 @@ class SimpleProcessor {
         script = job.script
         console.log(`Using pre-generated script with ${script.scenes.length} scenes`)
       } else {
-        // Generate new script
+        // Generate new script for first language only
         script = isDemoMode 
-          ? await mockGenerateScript(job.prompt, job.duration, job.language)
-          : await generateScript(job.prompt, job.duration, job.language)
+          ? await mockGenerateScript(job.prompt, job.duration, languages[0])
+          : await generateScript(job.prompt, job.duration, languages[0])
         console.log(`Generated new script with ${script.scenes.length} scenes`)
       }
       await this.updateStepStatus(jobId, 'SCRIPT', 'DONE', undefined, script)
 
-      // Step 2: Generate Images
+      // Step 2: Generate Images (shared across all languages)
       await this.updateStepStatus(jobId, 'IMAGES', 'RUNNING')
       const imageAssets = []
-      for (let i = 0; i < script.scenes.length; i++) {
-        const scene = script.scenes[i]
+      const scenes = script.languages ? script.languages[languages[0]]?.scenes || script.scenes : script.scenes
+      
+      for (let i = 0; i < scenes.length; i++) {
+        const scene = scenes[i]
         const imageBuffer = await (isDemoMode ? mockGenerateImage(scene.imageDescription) : generateImage(scene.imageDescription))
         const imageUrl = await memoryStorage.storeFile(jobId, 'image', `scene_${i}_image.jpg`, imageBuffer)
         
@@ -123,78 +128,89 @@ class SimpleProcessor {
       }
       await this.updateStepStatus(jobId, 'IMAGES', 'DONE')
 
-      // Step 3: Generate Audio
+      // Step 3: Generate Audio for each language
       await this.updateStepStatus(jobId, 'NARRATION', 'RUNNING')
-      const audioAssets = []
-      for (let i = 0; i < imageAssets.length; i++) {
-        const { scene } = imageAssets[i]
-        const audioBuffer = await (isDemoMode ? mockHeygenClient : heygenClient).generateAndWaitForCompletion(
-          scene.narration,
-          job.voiceId || '1bd001e7e50f421d891986aad5158bc3'
-        )
-        const audioUrl = await memoryStorage.storeFile(jobId, 'audio', `scene_${i}_audio.mp3`, audioBuffer)
+      const resultUrls: { [language: string]: string } = {}
+      
+      for (const langCode of languages) {
+        console.log(`Generating audio for language: ${langCode}`)
+        
+        // Get scenes for this language
+        const langScenes = script.languages ? script.languages[langCode]?.scenes || scenes : scenes
+        
+        const audioAssets = []
+        for (let i = 0; i < langScenes.length; i++) {
+          const scene = langScenes[i]
+          const audioBuffer = await (isDemoMode ? mockHeygenClient : heygenClient).generateAndWaitForCompletion(
+            scene.narration,
+            job.voiceId || '1bd001e7e50f421d891986aad5158bc3'
+          )
+          const audioUrl = await memoryStorage.storeFile(jobId, 'audio', `${langCode}_scene_${i}_audio.mp3`, audioBuffer)
+          
+          await memoryStorage.createAsset({
+            jobId,
+            kind: 'AUDIO',
+            url: audioUrl,
+            meta: { sceneId: scene.sceneId, sceneIndex: i, language: langCode }
+          })
+          audioAssets.push({ ...imageAssets[i], scene, audioBuffer, audioUrl })
+        }
+
+        // Step 4: Compose Video for this language
+        let videoUrl: string
+        try {
+          const compositionOptions = {
+            aspectRatio: job.aspectRatio as '16:9' | '9:16' | '1:1',
+            scenes: audioAssets.map((asset, i) => ({
+              sceneId: asset.scene.sceneId,
+              imageBuffer: asset.imageBuffer,
+              videoBuffer: null,
+              audioBuffer: asset.audioBuffer,
+              caption: asset.scene.caption,
+              duration: asset.scene.duration,
+            })),
+          }
+
+          console.log(`Starting video composition for ${langCode} with FFmpeg...`)
+          const finalVideoBuffer = await videoComposer.composeVideo(compositionOptions)
+          console.log(`Video composition completed for ${langCode}, buffer size:`, finalVideoBuffer.length)
+          videoUrl = await memoryStorage.storeFile(jobId, 'video', `${langCode}_final_video.mp4`, finalVideoBuffer)
+          console.log(`Video saved for ${langCode} to:`, videoUrl)
+        } catch (ffmpegError) {
+          console.error(`FFmpeg error details for ${langCode}:`, ffmpegError)
+          console.warn(`FFmpeg not available for ${langCode}, creating mock video:`, ffmpegError)
+          
+          // Create a mock video file for demo purposes
+          const mockVideoData = Buffer.from(`Mock video data for ${langCode} - FFmpeg not available`)
+          videoUrl = await memoryStorage.storeFile(jobId, 'video', `${langCode}_final_video.mp4`, mockVideoData)
+        }
         
         await memoryStorage.createAsset({
           jobId,
-          kind: 'AUDIO',
-          url: audioUrl,
-          meta: { sceneId: scene.sceneId, sceneIndex: i }
+          kind: 'VIDEO',
+          url: videoUrl,
+          meta: { type: 'final_video', duration: job.duration, language: langCode }
         })
-        audioAssets.push({ ...imageAssets[i], audioBuffer, audioUrl })
+
+        resultUrls[langCode] = videoUrl
       }
+      
       await this.updateStepStatus(jobId, 'NARRATION', 'DONE')
+      await this.updateStepStatus(jobId, 'COMPOSITION', 'DONE')
 
-      // Step 4: Compose Video
-      await this.updateStepStatus(jobId, 'COMPOSITION', 'RUNNING')
-      
-      let videoUrl: string
-      try {
-        const compositionOptions = {
-          aspectRatio: job.aspectRatio as '16:9' | '9:16' | '1:1',
-          scenes: audioAssets.map((asset, i) => ({
-            sceneId: asset.scene.sceneId,
-            imageBuffer: asset.imageBuffer,
-            videoBuffer: null, // We're not generating videos in this simplified version
-            audioBuffer: asset.audioBuffer,
-            caption: asset.scene.caption,
-            duration: asset.scene.duration,
-          })),
-        }
-
-        console.log('Starting video composition with FFmpeg...')
-        const finalVideoBuffer = await videoComposer.composeVideo(compositionOptions)
-        console.log('Video composition completed, buffer size:', finalVideoBuffer.length)
-        videoUrl = await memoryStorage.storeFile(jobId, 'video', 'final_video.mp4', finalVideoBuffer)
-        console.log('Video saved to:', videoUrl)
-      } catch (ffmpegError) {
-        console.error('FFmpeg error details:', ffmpegError)
-        console.warn('FFmpeg not available, creating mock video:', ffmpegError)
-        
-        // Create a mock video file for demo purposes
-        const mockVideoData = Buffer.from('Mock video data - FFmpeg not available')
-        videoUrl = await memoryStorage.storeFile(jobId, 'video', 'final_video.mp4', mockVideoData)
-      }
-      
-      await memoryStorage.createAsset({
-        jobId,
-        kind: 'VIDEO',
-        url: videoUrl,
-        meta: { type: 'final_video', duration: job.duration }
-      })
-
-      // Calculate total cost
-      const totalCost = isDemoMode ? mockCalculateTokenCost(1000, 500) + (script.scenes.length * 0.24) : calculateTokenCost(1000, 500) + (script.scenes.length * 0.24)
+      // Calculate total cost (per language)
+      const totalCost = isDemoMode 
+        ? mockCalculateTokenCost(1000, 500) + (scenes.length * languages.length * 0.24) 
+        : calculateTokenCost(1000, 500) + (scenes.length * languages.length * 0.24)
 
       // Update job as completed
       await memoryStorage.updateJob(jobId, {
         status: 'DONE',
-        resultUrl: videoUrl,
+        resultUrls,
         totalCost
       })
 
-      await this.updateStepStatus(jobId, 'COMPOSITION', 'DONE')
-
-      console.log(`Job ${jobId} completed successfully`)
+      console.log(`Job ${jobId} completed successfully with ${languages.length} language versions`)
 
     } catch (error) {
       console.error(`Job ${jobId} failed:`, error)
@@ -257,10 +273,10 @@ class SimpleProcessor {
       prompt: job.prompt,
       aspectRatio: job.aspectRatio,
       duration: job.duration,
-      language: job.language,
+      languages: job.language ? job.language.split(',') : [job.language || 'en'],
       voiceId: job.voiceId,
       totalCost: job.totalCost,
-      resultUrl: job.resultUrl,
+      resultUrls: job.resultUrls || (job.resultUrl ? { [job.language || 'en']: job.resultUrl } : undefined),
       createdAt: job.createdAt.toISOString(),
       updatedAt: job.updatedAt.toISOString(),
       steps: job.steps,

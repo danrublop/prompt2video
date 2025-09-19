@@ -3,18 +3,16 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { JobResponse, CreateJobRequest } from '@/types'
-import { SUPPORTED_LANGUAGES, LANGUAGE_GROUPS, getLanguageByCode } from '@/lib/languages'
+import { SUPPORTED_LANGUAGES, LANGUAGE_REGIONS, getLanguagesByRegion, getPopularLanguages } from '@/lib/languages'
 
 export default function Home() {
   const searchParams = useSearchParams()
   const [prompt, setPrompt] = useState('')
   const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16' | '1:1'>('16:9')
   const [duration, setDuration] = useState(150) // 2.5 minutes in seconds
-  const [language, setLanguage] = useState('en-US')
+  const [selectedLanguages, setSelectedLanguages] = useState<string[]>(['en'])
   const [voiceId, setVoiceId] = useState('')
-  const [multiLanguage, setMultiLanguage] = useState(false)
-  const [selectedLanguages, setSelectedLanguages] = useState<string[]>(['en-US'])
-  const [showLanguageSelector, setShowLanguageSelector] = useState(false)
+  const [showAllLanguages, setShowAllLanguages] = useState(false)
   const [currentJob, setCurrentJob] = useState<JobResponse | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
   const [isLoadingJob, setIsLoadingJob] = useState(false)
@@ -33,24 +31,9 @@ export default function Home() {
     }
   }, [searchParams])
 
-  const handleLanguageToggle = (langCode: string) => {
-    if (selectedLanguages.includes(langCode)) {
-      if (selectedLanguages.length > 1) { // Don't allow removing all languages
-        setSelectedLanguages(selectedLanguages.filter(lang => lang !== langCode))
-      }
-    } else {
-      setSelectedLanguages([...selectedLanguages, langCode])
-    }
-  }
-
   const createJob = async () => {
     if (!prompt.trim()) {
       setError('Please enter a prompt')
-      return
-    }
-    
-    if (multiLanguage && selectedLanguages.length === 0) {
-      setError('Please select at least one language for multi-language generation')
       return
     }
 
@@ -59,10 +42,8 @@ export default function Home() {
       prompt: prompt.trim(),
       aspectRatio,
       duration: duration.toString(),
-      language,
+      languages: selectedLanguages.join(','),
       voiceId: voiceId.trim() || '',
-      multiLanguage: multiLanguage.toString(),
-      targetLanguages: selectedLanguages.join(','),
     })
 
     window.location.href = `/storyboard?${params.toString()}`
@@ -138,6 +119,21 @@ export default function Home() {
     setIsGenerating(false)
   }
 
+  const toggleLanguage = (languageCode: string) => {
+    setSelectedLanguages(prev => 
+      prev.includes(languageCode) 
+        ? prev.filter(lang => lang !== languageCode)
+        : [...prev, languageCode]
+    )
+  }
+
+  const getSelectedLanguageNames = () => {
+    return selectedLanguages.map(code => {
+      const lang = SUPPORTED_LANGUAGES.find(l => l.code === code)
+      return lang ? lang.name : code
+    }).join(', ')
+  }
+
   const getStepStatus = (stepType: string) => {
     if (!currentJob || !currentJob.steps) return 'PENDING'
     const step = currentJob.steps.find(s => s.type === stepType)
@@ -166,18 +162,11 @@ export default function Home() {
           <p className="text-lg text-gray-600">
             Transform your ideas into professional explainer videos with AI
           </p>
-        <div className="mt-4 space-y-3">
-          <div className="p-3 bg-blue-50 border border-blue-200 rounded-md max-w-2xl mx-auto">
+          <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md max-w-2xl mx-auto">
             <p className="text-blue-800 text-sm">
               <strong>New:</strong> Interactive storyboard editing! Review and modify your video script before generation.
             </p>
           </div>
-          <div className="p-3 bg-green-50 border border-green-200 rounded-md max-w-2xl mx-auto">
-            <p className="text-green-800 text-sm">
-              <strong>🌍 Multi-Language:</strong> Now integrated! Check the "Generate in multiple languages" option below to create videos in multiple languages simultaneously.
-            </p>
-          </div>
-        </div>
         </div>
 
         {/* Main Content */}
@@ -235,124 +224,103 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="space-y-4">
-                {/* Multi-Language Toggle */}
-                <div className="flex items-center space-x-3">
-                  <input
-                    type="checkbox"
-                    id="multiLanguage"
-                    checked={multiLanguage}
-                    onChange={(e) => setMultiLanguage(e.target.checked)}
-                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    disabled={isGenerating}
-                  />
-                  <label htmlFor="multiLanguage" className="text-sm font-medium text-gray-700">
-                    Generate in multiple languages 🌍
-                  </label>
-                </div>
-
-                {/* Language Selection */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {multiLanguage ? 'Target Languages' : 'Language'}
-                  </label>
-                  
-                  {multiLanguage ? (
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-gray-600">
-                          {selectedLanguages.length} language{selectedLanguages.length !== 1 ? 's' : ''} selected
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setShowLanguageSelector(!showLanguageSelector)}
-                          className="text-blue-600 hover:text-blue-800 text-sm"
-                        >
-                          {showLanguageSelector ? 'Hide Languages' : 'Select Languages'}
-                        </button>
-                      </div>
-                      
-                      {showLanguageSelector && (
-                        <div className="border border-gray-300 rounded-md p-4 max-h-64 overflow-y-auto">
-                          <div className="space-y-4">
-                            {Object.entries(LANGUAGE_GROUPS).map(([groupName, languageCodes]) => (
-                              <div key={groupName}>
-                                <h4 className="font-medium text-sm text-gray-700 mb-2">{groupName}</h4>
-                                <div className="grid grid-cols-2 gap-2">
-                                  {languageCodes.map((langCode) => {
-                                    const lang = getLanguageByCode(langCode)
-                                    if (!lang) return null
-                                    return (
-                                      <label key={langCode} className="flex items-center space-x-2 text-sm">
-                                        <input
-                                          type="checkbox"
-                                          checked={selectedLanguages.includes(langCode)}
-                                          onChange={() => handleLanguageToggle(langCode)}
-                                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                        />
-                                        <span>{lang.name}</span>
-                                      </label>
-                                    )
-                                  })}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="flex flex-wrap gap-2">
-                        {selectedLanguages.map((langCode) => {
-                          const lang = getLanguageByCode(langCode)
-                          if (!lang) return null
-                          return (
-                            <span
-                              key={langCode}
-                              className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Languages ({selectedLanguages.length} selected)
+                </label>
+                <div className="space-y-3">
+                  {/* Selected Languages Display */}
+                  {selectedLanguages.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {selectedLanguages.map(code => {
+                        const lang = SUPPORTED_LANGUAGES.find(l => l.code === code)
+                        return (
+                          <span
+                            key={code}
+                            className="inline-flex items-center px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-800"
+                          >
+                            {lang?.name || code}
+                            <button
+                              type="button"
+                              onClick={() => toggleLanguage(code)}
+                              className="ml-2 text-blue-600 hover:text-blue-800"
+                              disabled={isGenerating}
                             >
-                              {lang.name}
-                              <button
-                                type="button"
-                                onClick={() => handleLanguageToggle(langCode)}
-                                className="ml-2 text-blue-600 hover:text-blue-800"
-                              >
-                                ×
-                              </button>
-                            </span>
-                          )
-                        })}
-                      </div>
+                              ×
+                            </button>
+                          </span>
+                        )
+                      })}
                     </div>
-                  ) : (
-                    <select
-                      value={language}
-                      onChange={(e) => setLanguage(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      disabled={isGenerating}
-                    >
-                      {SUPPORTED_LANGUAGES.slice(0, 20).map((lang) => (
-                        <option key={lang.code} value={lang.code}>
-                          {lang.name} ({lang.nativeName})
-                        </option>
-                      ))}
-                    </select>
                   )}
-                </div>
 
-                {/* Voice ID */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Voice ID (optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={voiceId}
-                    onChange={(e) => setVoiceId(e.target.value)}
-                    placeholder="Leave empty for default"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    disabled={isGenerating}
-                  />
+                  {/* Language Selection */}
+                  <div className="border border-gray-300 rounded-md p-3 max-h-48 overflow-y-auto">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium text-gray-700">
+                        {showAllLanguages ? 'All Languages' : 'Popular Languages'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowAllLanguages(!showAllLanguages)}
+                        className="text-sm text-blue-600 hover:text-blue-800"
+                        disabled={isGenerating}
+                      >
+                        {showAllLanguages ? 'Show Popular' : 'Show All'}
+                      </button>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      {LANGUAGE_REGIONS.map(region => {
+                        const languages = showAllLanguages 
+                          ? getLanguagesByRegion(region)
+                          : getLanguagesByRegion(region).filter(lang => 
+                              getPopularLanguages().some(popular => popular.code === lang.code)
+                            )
+                        
+                        if (languages.length === 0) return null
+                        
+                        return (
+                          <div key={region}>
+                            <div className="text-xs font-medium text-gray-500 mb-1">{region}</div>
+                            <div className="grid grid-cols-1 gap-1">
+                              {languages.map(lang => (
+                                <label
+                                  key={lang.code}
+                                  className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-gray-50 p-1 rounded"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedLanguages.includes(lang.code)}
+                                    onChange={() => toggleLanguage(lang.code)}
+                                    disabled={isGenerating}
+                                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                  />
+                                  <span className="text-gray-700">{lang.name}</span>
+                                  <span className="text-gray-500 text-xs">({lang.nativeName})</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Voice ID (optional)
+                </label>
+                <input
+                  type="text"
+                  value={voiceId}
+                  onChange={(e) => setVoiceId(e.target.value)}
+                  placeholder="Leave empty for default"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={isGenerating}
+                />
               </div>
 
               {error && (
@@ -364,13 +332,10 @@ export default function Home() {
               <div className="space-y-2">
                 <button
                   onClick={createJob}
-                  disabled={!prompt.trim() || (multiLanguage && selectedLanguages.length === 0)}
+                  disabled={!prompt.trim()}
                   className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
                 >
-                  {multiLanguage 
-                    ? `Create Storyboard (${selectedLanguages.length} language${selectedLanguages.length !== 1 ? 's' : ''})`
-                    : 'Create Storyboard'
-                  }
+                  Create Storyboard
                 </button>
                 
                 {isGenerating && (
@@ -449,26 +414,63 @@ export default function Home() {
                 </div>
 
                 {/* Results */}
-                {currentJob.status === 'DONE' && currentJob.resultUrl && (
+                {currentJob.status === 'DONE' && (currentJob.resultUrls || currentJob.resultUrl) && (
                   <div className="space-y-4">
-                    <h3 className="font-medium text-gray-900">Your Video</h3>
+                    <h3 className="font-medium text-gray-900">
+                      Your Video{currentJob.languages && currentJob.languages.length > 1 ? 's' : ''}
+                    </h3>
                     
-                    <video
-                      controls
-                      className="w-full rounded-md"
-                      src={currentJob.resultUrl}
-                    >
-                      Your browser does not support the video tag.
-                    </video>
+                    {currentJob.resultUrls ? (
+                      // Multi-language results
+                      <div className="space-y-4">
+                        {Object.entries(currentJob.resultUrls).map(([langCode, videoUrl]) => {
+                          const lang = SUPPORTED_LANGUAGES.find(l => l.code === langCode)
+                          return (
+                            <div key={langCode} className="border border-gray-200 rounded-md p-4">
+                              <h4 className="font-medium text-gray-900 mb-2">
+                                {lang?.name || langCode} Version
+                              </h4>
+                              <video
+                                controls
+                                className="w-full rounded-md mb-3"
+                                src={videoUrl}
+                              >
+                                Your browser does not support the video tag.
+                              </video>
+                              <a
+                                href={videoUrl}
+                                download={`video_${langCode}.mp4`}
+                                className="inline-block bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 text-center transition-colors"
+                              >
+                                Download {lang?.name || langCode} Video
+                              </a>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    ) : (
+                      // Single language result (backward compatibility)
+                      <div>
+                        <video
+                          controls
+                          className="w-full rounded-md"
+                          src={currentJob.resultUrl}
+                        >
+                          Your browser does not support the video tag.
+                        </video>
+                        <div className="flex space-x-2 mt-3">
+                          <a
+                            href={currentJob.resultUrl}
+                            download
+                            className="flex-1 bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 text-center transition-colors"
+                          >
+                            Download Video
+                          </a>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="flex space-x-2">
-                      <a
-                        href={currentJob.resultUrl}
-                        download
-                        className="flex-1 bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 text-center transition-colors"
-                      >
-                        Download Video
-                      </a>
                       <button
                         onClick={resetForm}
                         className="flex-1 bg-gray-600 text-white py-2 px-4 rounded-md hover:bg-gray-700 transition-colors"

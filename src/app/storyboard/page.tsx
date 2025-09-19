@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { SUPPORTED_LANGUAGES, getLanguageByCode } from '@/lib/languages'
 
 interface ScriptScene {
   sceneId: string
@@ -17,6 +18,7 @@ interface ScriptResponse {
   totalDuration: number
   scenes: ScriptScene[]
   demo?: boolean
+  languages?: { [key: string]: { title: string; scenes: ScriptScene[] } }
 }
 
 export default function StoryboardPage() {
@@ -28,65 +30,26 @@ export default function StoryboardPage() {
   const [error, setError] = useState('')
   const [editingScene, setEditingScene] = useState<number | null>(null)
   const [editedScript, setEditedScript] = useState<ScriptResponse | null>(null)
+  const [selectedLanguage, setSelectedLanguage] = useState<string>('en')
 
   // Get parameters from URL
   const prompt = searchParams.get('prompt') || ''
   const aspectRatio = searchParams.get('aspectRatio') || '16:9'
   const duration = parseInt(searchParams.get('duration') || '150')
-  const language = searchParams.get('language') || 'en-US'
+  const languages = searchParams.get('languages')?.split(',') || ['en']
   const voiceId = searchParams.get('voiceId') || ''
-  const multiLanguage = searchParams.get('multiLanguage') === 'true'
-  const targetLanguages = searchParams.get('targetLanguages')?.split(',') || []
-
-  console.log('Storyboard page parameters:', {
-    prompt,
-    aspectRatio,
-    duration,
-    language,
-    voiceId,
-    multiLanguage,
-    targetLanguages
-  })
-
-  // Generate mock translations for multi-language mode
-  const generateMockTranslations = (text: string, targetLanguages: string[]) => {
-    const translations: { [key: string]: string } = {}
-    
-    targetLanguages.forEach(langCode => {
-      // Simple mock translation based on language code
-      if (langCode.startsWith('es')) {
-        translations[langCode] = `[ES] ${text}`
-      } else if (langCode.startsWith('fr')) {
-        translations[langCode] = `[FR] ${text}`
-      } else if (langCode.startsWith('de')) {
-        translations[langCode] = `[DE] ${text}`
-      } else if (langCode.startsWith('it')) {
-        translations[langCode] = `[IT] ${text}`
-      } else if (langCode.startsWith('pt')) {
-        translations[langCode] = `[PT] ${text}`
-      } else if (langCode.startsWith('zh')) {
-        translations[langCode] = `[中文] ${text}`
-      } else if (langCode.startsWith('ja')) {
-        translations[langCode] = `[日本語] ${text}`
-      } else if (langCode.startsWith('ko')) {
-        translations[langCode] = `[한국어] ${text}`
-      } else if (langCode.startsWith('ru')) {
-        translations[langCode] = `[Русский] ${text}`
-      } else if (langCode.startsWith('ar')) {
-        translations[langCode] = `[العربية] ${text}`
-      } else {
-        translations[langCode] = `[${langCode.toUpperCase()}] ${text}`
-      }
-    })
-    
-    return translations
-  }
 
   useEffect(() => {
     if (prompt) {
       generateScript()
     }
   }, [])
+
+  useEffect(() => {
+    if (script && script.languages && languages.length > 0) {
+      setSelectedLanguage(languages[0])
+    }
+  }, [script, languages])
 
   const generateScript = async () => {
     setIsLoading(true)
@@ -102,7 +65,7 @@ export default function StoryboardPage() {
           prompt,
           aspectRatio,
           duration,
-          language,
+          languages,
         }),
       })
 
@@ -140,6 +103,48 @@ export default function StoryboardPage() {
     })
   }
 
+  const updateMultiLanguageScene = (languageCode: string, sceneIndex: number, field: keyof ScriptScene, value: string | number) => {
+    if (!editedScript || !editedScript.languages) return
+
+    const updatedLanguages = { ...editedScript.languages }
+    if (updatedLanguages[languageCode]) {
+      const updatedScenes = [...updatedLanguages[languageCode].scenes]
+      updatedScenes[sceneIndex] = {
+        ...updatedScenes[sceneIndex],
+        [field]: value
+      }
+      updatedLanguages[languageCode] = {
+        ...updatedLanguages[languageCode],
+        scenes: updatedScenes
+      }
+    }
+
+    setEditedScript({
+      ...editedScript,
+      languages: updatedLanguages
+    })
+  }
+
+  const getCurrentScenes = () => {
+    if (!editedScript) return []
+    
+    if (editedScript.languages && editedScript.languages[selectedLanguage]) {
+      return editedScript.languages[selectedLanguage].scenes
+    }
+    
+    return editedScript.scenes
+  }
+
+  const getCurrentTitle = () => {
+    if (!editedScript) return ''
+    
+    if (editedScript.languages && editedScript.languages[selectedLanguage]) {
+      return editedScript.languages[selectedLanguage].title
+    }
+    
+    return editedScript.title
+  }
+
   const confirmAndGenerate = async () => {
     if (!editedScript) return
 
@@ -159,11 +164,9 @@ export default function StoryboardPage() {
           prompt,
           aspectRatio,
           duration,
-          language,
+          languages,
           voiceId: voiceId || undefined,
           script: editedScript, // Pass the edited script
-          multiLanguage,
-          targetLanguages,
         }),
       })
 
@@ -248,12 +251,12 @@ export default function StoryboardPage() {
           <div className="flex justify-between items-start mb-4">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 mb-2">Storyboard Preview</h1>
-              <p className="text-lg text-gray-600 mb-2">{script.title}</p>
+              <p className="text-lg text-gray-600 mb-2">{getCurrentTitle()}</p>
               <div className="flex space-x-4 text-sm text-gray-500">
                 <span>Duration: {Math.round(script.totalDuration)}s</span>
-                <span>Scenes: {script.scenes.length}</span>
+                <span>Scenes: {getCurrentScenes().length}</span>
                 <span>Aspect Ratio: {aspectRatio}</span>
-                <span>Language: {language}</span>
+                <span>Languages: {languages.length}</span>
               </div>
             </div>
             <div className="flex space-x-2">
@@ -272,19 +275,41 @@ export default function StoryboardPage() {
             </div>
           </div>
           
+          {/* Language Selector */}
+          {languages.length > 1 && script?.languages && (
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Select Language to Edit
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {languages.map(langCode => {
+                  const lang = getLanguageByCode(langCode)
+                  return (
+                    <button
+                      key={langCode}
+                      onClick={() => setSelectedLanguage(langCode)}
+                      className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                        selectedLanguage === langCode
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      {lang?.name || langCode}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
             <p className="text-blue-800 text-sm">
               <strong>Review and edit your storyboard below.</strong> You can modify the narration, captions, and image descriptions for each scene. 
-              Once you're satisfied, click "Confirm & Generate Video" to create your video.
+              Once you're satisfied, click "Confirm & Generate Video" to create your video in {languages.length} language{languages.length > 1 ? 's' : ''}.
             </p>
             {script && script.demo && (
               <p className="text-yellow-800 text-sm mt-2 font-medium">
                 🎭 Demo Mode: This is using mock data. Add your API keys for real video generation.
-              </p>
-            )}
-            {multiLanguage && (
-              <p className="text-green-800 text-sm mt-2 font-medium">
-                🌍 Multi-Language: This video will be generated in {targetLanguages.length} language{targetLanguages.length !== 1 ? 's' : ''}: {targetLanguages.join(', ')}
               </p>
             )}
           </div>
@@ -292,7 +317,7 @@ export default function StoryboardPage() {
 
         {/* Storyboard */}
         <div className="space-y-6">
-          {editedScript?.scenes.map((scene, index) => (
+          {getCurrentScenes().map((scene, index) => (
             <div key={scene.sceneId} className="bg-white rounded-lg shadow-md p-6">
               <div className="flex justify-between items-start mb-4">
                 <h3 className="text-xl font-semibold text-gray-900">
@@ -318,42 +343,33 @@ export default function StoryboardPage() {
                     <input
                       type="text"
                       value={scene.goal}
-                      onChange={(e) => updateScene(index, 'goal', e.target.value)}
+                      onChange={(e) => {
+                        if (script?.languages) {
+                          updateMultiLanguageScene(selectedLanguage, index, 'goal', e.target.value)
+                        } else {
+                          updateScene(index, 'goal', e.target.value)
+                        }
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
                   
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Narration {multiLanguage && targetLanguages.length > 0 ? '(Primary Language)' : ''}
+                      Narration
                     </label>
                     <textarea
                       value={scene.narration}
-                      onChange={(e) => updateScene(index, 'narration', e.target.value)}
+                      onChange={(e) => {
+                        if (script?.languages) {
+                          updateMultiLanguageScene(selectedLanguage, index, 'narration', e.target.value)
+                        } else {
+                          updateScene(index, 'narration', e.target.value)
+                        }
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                       rows={3}
                     />
-                    {multiLanguage && targetLanguages.length > 0 && (
-                      <div className="mt-2">
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Translations Preview
-                        </label>
-                        <div className="space-y-2">
-                          {targetLanguages.map((langCode) => {
-                            const translations = generateMockTranslations(scene.narration, [langCode])
-                            const translation = translations[langCode]
-                            return (
-                              <div key={langCode} className="bg-blue-50 rounded-md p-2 border border-blue-200">
-                                <div className="flex items-center justify-between mb-1">
-                                  <span className="text-xs font-medium text-blue-800">{langCode.toUpperCase()}</span>
-                                </div>
-                                <p className="text-gray-700 text-xs">{translation}</p>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )}
                   </div>
                   
                   <div>
@@ -363,7 +379,13 @@ export default function StoryboardPage() {
                     <input
                       type="text"
                       value={scene.caption}
-                      onChange={(e) => updateScene(index, 'caption', e.target.value)}
+                      onChange={(e) => {
+                        if (script?.languages) {
+                          updateMultiLanguageScene(selectedLanguage, index, 'caption', e.target.value)
+                        } else {
+                          updateScene(index, 'caption', e.target.value)
+                        }
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
@@ -374,7 +396,13 @@ export default function StoryboardPage() {
                     </label>
                     <textarea
                       value={scene.imageDescription}
-                      onChange={(e) => updateScene(index, 'imageDescription', e.target.value)}
+                      onChange={(e) => {
+                        if (script?.languages) {
+                          updateMultiLanguageScene(selectedLanguage, index, 'imageDescription', e.target.value)
+                        } else {
+                          updateScene(index, 'imageDescription', e.target.value)
+                        }
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                       rows={2}
                     />
@@ -388,7 +416,13 @@ export default function StoryboardPage() {
                       <input
                         type="number"
                         value={scene.duration}
-                        onChange={(e) => updateScene(index, 'duration', parseInt(e.target.value))}
+                        onChange={(e) => {
+                          if (script?.languages) {
+                            updateMultiLanguageScene(selectedLanguage, index, 'duration', parseInt(e.target.value))
+                          } else {
+                            updateScene(index, 'duration', parseInt(e.target.value))
+                          }
+                        }}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         min="5"
                         max="60"
@@ -398,30 +432,10 @@ export default function StoryboardPage() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {/* Multi-Language Narration Display */}
-                  {multiLanguage && targetLanguages.length > 0 ? (
-                    <div className="space-y-3">
-                      <h4 className="font-medium text-gray-900 mb-2">Narration (Multi-Language)</h4>
-                      {targetLanguages.map((langCode) => {
-                        const translations = generateMockTranslations(scene.narration, [langCode])
-                        const translation = translations[langCode]
-                        return (
-                          <div key={langCode} className="bg-gray-50 rounded-md p-3 border-l-4 border-blue-200">
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="text-sm font-medium text-blue-800">{langCode.toUpperCase()}</span>
-                              <span className="text-xs text-gray-500">{scene.duration}s</span>
-                            </div>
-                            <p className="text-gray-700 text-sm">{translation}</p>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  ) : (
-                    <div className="bg-gray-50 rounded-md p-4">
-                      <h4 className="font-medium text-gray-900 mb-2">Narration</h4>
-                      <p className="text-gray-700">{scene.narration}</p>
-                    </div>
-                  )}
+                  <div className="bg-gray-50 rounded-md p-4">
+                    <h4 className="font-medium text-gray-900 mb-2">Narration</h4>
+                    <p className="text-gray-700">{scene.narration}</p>
+                  </div>
                   
                   <div className="bg-gray-50 rounded-md p-4">
                     <h4 className="font-medium text-gray-900 mb-2">On-Screen Caption</h4>
@@ -443,8 +457,9 @@ export default function StoryboardPage() {
           <div className="flex justify-between items-center">
             <div className="text-sm text-gray-600">
               Total Duration: {Math.round(editedScript?.totalDuration || 0)}s | 
-              Scenes: {editedScript?.scenes.length || 0} | 
-              Estimated Cost: ${((editedScript?.scenes.length || 0) * 0.24 + 0.05).toFixed(4)}
+              Scenes: {getCurrentScenes().length} | 
+              Languages: {languages.length} | 
+              Estimated Cost: ${((getCurrentScenes().length * languages.length * 0.24) + 0.05).toFixed(4)}
             </div>
             <div className="flex space-x-4">
               <button

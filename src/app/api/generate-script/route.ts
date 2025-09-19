@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { generateScript } from '@/lib/openai'
 import { generateScript as mockGenerateScript } from '@/lib/mock-openai'
+import { SUPPORTED_LANGUAGES, getLanguageByCode } from '@/lib/languages'
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { prompt, aspectRatio = '16:9', duration = 150, language = 'English' } = body
+    const { prompt, aspectRatio = '16:9', duration = 150, languages = ['en'] } = body
     
     if (!prompt || prompt.trim().length === 0) {
       return NextResponse.json(
@@ -14,7 +15,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log(`Generating script for: "${prompt}"`)
+    console.log(`Generating script for: "${prompt}" in ${languages.length} languages`)
 
     // Check if we're in demo mode (mock API keys or missing keys)
     const isDemoMode = !process.env.OPENAI_API_KEY || 
@@ -23,17 +24,44 @@ export async function POST(request: NextRequest) {
                       process.env.HEYGEN_API_KEY === 'mock' ||
                       process.env.HEYGEN_API_KEY === 'your_heygen_api_key_here'
     
-    // Generate script only (no images, audio, or video yet)
-    const script = isDemoMode 
-      ? await mockGenerateScript(prompt.trim(), duration, language)
-      : await generateScript(prompt.trim(), duration, language)
+    // Generate script for each language
+    const scriptPromises = languages.map(async (langCode: string) => {
+      const language = getLanguageByCode(langCode)
+      const languageName = language?.name || langCode
+      
+      const script = isDemoMode 
+        ? await mockGenerateScript(prompt.trim(), duration, languageName)
+        : await generateScript(prompt.trim(), duration, languageName)
+      
+      return { langCode, script }
+    })
+
+    const languageScripts = await Promise.all(scriptPromises)
+    
+    // Create the main script (first language) and multi-language object
+    const mainScript = languageScripts[0].script
+    const multiLanguageScripts: { [key: string]: any } = {}
+    
+    languageScripts.forEach(({ langCode, script }) => {
+      multiLanguageScripts[langCode] = {
+        title: script.title,
+        scenes: script.scenes
+      }
+    })
+
+    // Add multi-language support to the main script
+    const finalScript = {
+      ...mainScript,
+      languages: multiLanguageScripts
+    }
 
     return NextResponse.json({
       success: true,
-      script: script,
-      estimatedCost: (script.scenes.length * 0.24) + 0.05, // Approximate cost
-      duration: script.totalDuration,
-      sceneCount: script.scenes.length,
+      script: finalScript,
+      estimatedCost: (mainScript.scenes.length * languages.length * 0.24) + 0.05, // Cost per language
+      duration: mainScript.totalDuration,
+      sceneCount: mainScript.scenes.length,
+      languageCount: languages.length,
       demo: isDemoMode
     })
 

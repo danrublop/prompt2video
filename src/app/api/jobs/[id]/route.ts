@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { simpleProcessor } from '@/lib/simple-processor'
-import { multiLanguageProcessor } from '@/lib/multi-language-processor'
 
 export async function GET(
   request: NextRequest,
@@ -9,17 +8,7 @@ export async function GET(
   try {
     const { id: jobId } = await params
 
-      // Try both processors to find the job
-      console.log('Looking for job:', jobId)
-      let job = await simpleProcessor.getJob(jobId)
-      if (!job) {
-        console.log('Job not found in simple processor, trying multi-language processor')
-        job = await multiLanguageProcessor.getJob(jobId)
-      }
-      
-      if (job) {
-        console.log('Job found:', job.id, 'multiLanguage:', job.multiLanguage, 'languageVideos:', job.languageVideos?.length || 0)
-      }
+    const job = await simpleProcessor.getJob(jobId)
 
     if (!job) {
       return NextResponse.json(

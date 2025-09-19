@@ -2,10 +2,8 @@ export interface CreateJobRequest {
   prompt: string
   aspectRatio?: '16:9' | '9:16' | '1:1'
   duration?: number // in seconds
-  language?: string
+  languages?: string[]
   voiceId?: string
-  multiLanguage?: boolean
-  targetLanguages?: string[]
 }
 
 export interface JobResponse {
@@ -13,28 +11,17 @@ export interface JobResponse {
   prompt: string
   aspectRatio: string
   duration: number
-  language: string
+  languages: string[]
   voiceId?: string
   status: 'QUEUED' | 'RUNNING' | 'FAILED' | 'DONE'
   totalCost: number
-  resultUrl?: string
+  resultUrl?: string // For backward compatibility
+  resultUrls?: { [language: string]: string }
   styleProfile: string
   createdAt: string
   updatedAt: string
   steps: StepResponse[]
   assets: AssetResponse[]
-  multiLanguage?: boolean
-  targetLanguages?: string[]
-  languageVideos?: LanguageVideo[]
-}
-
-export interface LanguageVideo {
-  language: string
-  languageName: string
-  nativeName: string
-  videoUrl: string
-  status: 'PENDING' | 'RUNNING' | 'FAILED' | 'DONE'
-  error?: string
 }
 
 export interface StepResponse {

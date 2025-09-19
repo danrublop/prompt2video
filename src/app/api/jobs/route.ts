@@ -1,12 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { simpleProcessor } from '@/lib/simple-processor'
-import { multiLanguageProcessor } from '@/lib/multi-language-processor'
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    
-    console.log('Job creation request body:', JSON.stringify(body, null, 2))
     
     // Validate required fields
     if (!body.prompt || body.prompt.trim().length === 0) {
@@ -16,21 +13,15 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Use multi-language processor if multi-language is requested
-    const processor = body.multiLanguage ? multiLanguageProcessor : simpleProcessor
-    console.log('Using processor:', body.multiLanguage ? 'multiLanguageProcessor' : 'simpleProcessor')
-    
     // Create and process job
-    const job = await processor.createJob({
+    const job = await simpleProcessor.createJob({
       prompt: body.prompt.trim(),
       aspectRatio: body.aspectRatio || '16:9',
       duration: body.duration || 150, // 2.5 minutes default
-      language: body.language || 'English',
+      languages: body.languages || ['en'],
       voiceId: body.voiceId,
       styleProfile: body.styleProfile,
-      script: body.script, // Pass the script if provided
-      multiLanguage: body.multiLanguage,
-      targetLanguages: body.targetLanguages,
+      script: body.script, // Pass through the script from storyboard
     })
 
     return NextResponse.json({

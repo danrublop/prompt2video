@@ -2,18 +2,14 @@
 
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { SUPPORTED_LANGUAGES, LANGUAGE_GROUPS, getLanguageByCode } from '@/lib/languages'
 
 export default function DemoVideoGenerator() {
   const searchParams = useSearchParams()
   const [prompt, setPrompt] = useState('')
   const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16' | '1:1'>('16:9')
   const [duration, setDuration] = useState(150) // 2.5 minutes in seconds
-  const [language, setLanguage] = useState('en-US')
+  const [language, setLanguage] = useState('English')
   const [voiceId, setVoiceId] = useState('')
-  const [multiLanguage, setMultiLanguage] = useState(false)
-  const [selectedLanguages, setSelectedLanguages] = useState<string[]>(['en-US'])
-  const [showLanguageSelector, setShowLanguageSelector] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
   const [isLoadingJob, setIsLoadingJob] = useState(false)
   const [error, setError] = useState('')
@@ -25,8 +21,6 @@ export default function DemoVideoGenerator() {
     duration: number
     demo: boolean
     message: string
-    multiLanguage?: boolean
-    languageVideos?: any[]
   } | null>(null)
 
   // Check for job ID in URL parameters
@@ -50,39 +44,18 @@ export default function DemoVideoGenerator() {
       }
       const jobData = await response.json()
       console.log('Job data received:', jobData)
-      console.log('Multi-language check:', {
-        multiLanguage: jobData.multiLanguage,
-        languageVideos: jobData.languageVideos,
-        languageVideosLength: jobData.languageVideos?.length || 0
-      })
       setCurrentJob(jobData)
       
       // If job is done, show results
       if (jobData.status === 'DONE') {
-        const script = jobData.steps?.find((s: any) => s.type === 'SCRIPT')?.payload || { scenes: [] }
-        
-        // Check if this is a multi-language job
-        if (jobData.multiLanguage && jobData.languageVideos && jobData.languageVideos.length > 0) {
-          setResult({
-            video: jobData.resultUrl || 'mock-video-url',
-            script: script,
-            totalCost: jobData.totalCost || 0,
-            duration: jobData.duration || 150,
-            demo: true,
-            message: `Demo videos generated successfully in ${jobData.languageVideos.length} language${jobData.languageVideos.length !== 1 ? 's' : ''}! (This is mock data - add API keys for real generation)`,
-            multiLanguage: true,
-            languageVideos: jobData.languageVideos
-          })
-        } else {
-          setResult({
-            video: jobData.resultUrl || 'mock-video-url',
-            script: script,
-            totalCost: jobData.totalCost || 0,
-            duration: jobData.duration || 150,
-            demo: true,
-            message: "Demo video generated successfully! (This is mock data - add API keys for real generation)"
-          })
-        }
+        setResult({
+          video: jobData.resultUrl || 'mock-video-url',
+          script: jobData.steps?.find((s: any) => s.type === 'SCRIPT')?.payload || { scenes: [] },
+          totalCost: jobData.totalCost || 0,
+          duration: jobData.duration || 150,
+          demo: true,
+          message: "Demo video generated successfully! (This is mock data - add API keys for real generation)"
+        })
       }
     } catch (err) {
       console.error('Error fetching job status:', err)
@@ -108,24 +81,9 @@ export default function DemoVideoGenerator() {
     return () => clearInterval(interval)
   }, [currentJob?.id, currentJob?.status])
 
-  const handleLanguageToggle = (langCode: string) => {
-    if (selectedLanguages.includes(langCode)) {
-      if (selectedLanguages.length > 1) { // Don't allow removing all languages
-        setSelectedLanguages(selectedLanguages.filter(lang => lang !== langCode))
-      }
-    } else {
-      setSelectedLanguages([...selectedLanguages, langCode])
-    }
-  }
-
   const generateVideo = async () => {
     if (!prompt.trim()) {
       setError('Please enter a prompt')
-      return
-    }
-    
-    if (multiLanguage && selectedLanguages.length === 0) {
-      setError('Please select at least one language for multi-language generation')
       return
     }
 
@@ -137,8 +95,6 @@ export default function DemoVideoGenerator() {
       language,
       voiceId: voiceId.trim() || '',
       demo: 'true', // Mark as demo
-      multiLanguage: multiLanguage.toString(),
-      targetLanguages: selectedLanguages.join(','),
     })
 
     window.location.href = `/storyboard?${params.toString()}`
@@ -153,18 +109,11 @@ export default function DemoVideoGenerator() {
           <p className="text-lg text-gray-600">
             Test the app without API keys - This is a demonstration mode
           </p>
-          <div className="mt-4 space-y-3">
-            <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-md">
-              <p className="text-yellow-800 text-sm">
-                <strong>Demo Mode:</strong> This version uses mock data and simulated responses. 
-                No real videos are generated. Add your API keys to the main app for real video generation.
-              </p>
-            </div>
-            <div className="p-3 bg-green-50 border border-green-200 rounded-md">
-              <p className="text-green-800 text-sm">
-                <strong>🌍 Multi-Language:</strong> Now integrated! Check the "Generate in multiple languages" option below to create videos in multiple languages simultaneously.
-              </p>
-            </div>
+          <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-md">
+            <p className="text-yellow-800 text-sm">
+              <strong>Demo Mode:</strong> This version uses mock data and simulated responses. 
+              No real videos are generated. Add your API keys to the main app for real video generation.
+            </p>
           </div>
         </div>
 
@@ -288,111 +237,24 @@ export default function DemoVideoGenerator() {
                 </div>
               </div>
 
-              <div className="space-y-4">
-                {/* Multi-Language Toggle */}
-                <div className="flex items-center space-x-3">
-                  <input
-                    type="checkbox"
-                    id="multiLanguage"
-                    checked={multiLanguage}
-                    onChange={(e) => setMultiLanguage(e.target.checked)}
-                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    disabled={isGenerating}
-                  />
-                  <label htmlFor="multiLanguage" className="text-sm font-medium text-gray-700">
-                    Generate in multiple languages 🌍
-                  </label>
-                </div>
-
-                {/* Language Selection */}
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {multiLanguage ? 'Target Languages' : 'Language'}
+                    Language
                   </label>
-                  
-                  {multiLanguage ? (
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-gray-600">
-                          {selectedLanguages.length} language{selectedLanguages.length !== 1 ? 's' : ''} selected
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setShowLanguageSelector(!showLanguageSelector)}
-                          className="text-blue-600 hover:text-blue-800 text-sm"
-                        >
-                          {showLanguageSelector ? 'Hide Languages' : 'Select Languages'}
-                        </button>
-                      </div>
-                      
-                      {showLanguageSelector && (
-                        <div className="border border-gray-300 rounded-md p-4 max-h-64 overflow-y-auto">
-                          <div className="space-y-4">
-                            {Object.entries(LANGUAGE_GROUPS).map(([groupName, languageCodes]) => (
-                              <div key={groupName}>
-                                <h4 className="font-medium text-sm text-gray-700 mb-2">{groupName}</h4>
-                                <div className="grid grid-cols-2 gap-2">
-                                  {languageCodes.map((langCode) => {
-                                    const lang = getLanguageByCode(langCode)
-                                    if (!lang) return null
-                                    return (
-                                      <label key={langCode} className="flex items-center space-x-2 text-sm">
-                                        <input
-                                          type="checkbox"
-                                          checked={selectedLanguages.includes(langCode)}
-                                          onChange={() => handleLanguageToggle(langCode)}
-                                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                        />
-                                        <span>{lang.name}</span>
-                                      </label>
-                                    )
-                                  })}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="flex flex-wrap gap-2">
-                        {selectedLanguages.map((langCode) => {
-                          const lang = getLanguageByCode(langCode)
-                          if (!lang) return null
-                          return (
-                            <span
-                              key={langCode}
-                              className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
-                            >
-                              {lang.name}
-                              <button
-                                type="button"
-                                onClick={() => handleLanguageToggle(langCode)}
-                                className="ml-2 text-blue-600 hover:text-blue-800"
-                              >
-                                ×
-                              </button>
-                            </span>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  ) : (
-                    <select
-                      value={language}
-                      onChange={(e) => setLanguage(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      disabled={isGenerating}
-                    >
-                      {SUPPORTED_LANGUAGES.slice(0, 20).map((lang) => (
-                        <option key={lang.code} value={lang.code}>
-                          {lang.name} ({lang.nativeName})
-                        </option>
-                      ))}
-                    </select>
-                  )}
+                  <select
+                    value={language}
+                    onChange={(e) => setLanguage(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    disabled={isGenerating}
+                  >
+                    <option value="English">English</option>
+                    <option value="Spanish">Spanish</option>
+                    <option value="French">French</option>
+                    <option value="German">German</option>
+                  </select>
                 </div>
 
-                {/* Voice ID */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Voice ID (optional)
@@ -416,15 +278,10 @@ export default function DemoVideoGenerator() {
 
                 <button
                   onClick={generateVideo}
-                  disabled={isGenerating || !prompt.trim() || (multiLanguage && selectedLanguages.length === 0)}
+                  disabled={isGenerating || !prompt.trim()}
                   className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
                 >
-                  {isGenerating 
-                    ? 'Generating Demo Video...' 
-                    : multiLanguage 
-                      ? `Create Demo Storyboard (${selectedLanguages.length} language${selectedLanguages.length !== 1 ? 's' : ''})`
-                      : 'Create Demo Storyboard'
-                  }
+                  {isGenerating ? 'Generating Demo Video...' : 'Create Demo Storyboard'}
                 </button>
               </div>
             )}
@@ -465,41 +322,6 @@ export default function DemoVideoGenerator() {
                   </div>
                 </div>
 
-                {/* Multi-Language Videos */}
-                {result.multiLanguage && result.languageVideos && (
-                  <div>
-                    <h3 className="font-medium text-gray-900 mb-2">Generated Videos</h3>
-                    <div className="space-y-3">
-                      {result.languageVideos.map((langVideo: any, index: number) => (
-                        <div key={index} className="bg-gray-50 rounded-md p-3 border">
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <div className="font-medium text-sm text-gray-900">{langVideo.languageName}</div>
-                              <div className="text-xs text-gray-500">{langVideo.nativeName}</div>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <span className={`text-xs px-2 py-1 rounded-full ${
-                                langVideo.status === 'DONE' ? 'bg-green-100 text-green-800' :
-                                langVideo.status === 'FAILED' ? 'bg-red-100 text-red-800' :
-                                langVideo.status === 'RUNNING' ? 'bg-blue-100 text-blue-800' :
-                                'bg-gray-100 text-gray-800'
-                              }`}>
-                                {langVideo.status}
-                              </span>
-                              {langVideo.status === 'DONE' && (
-                                <span className="text-xs text-green-600">✓ Ready</span>
-                              )}
-                            </div>
-                          </div>
-                          {langVideo.error && (
-                            <div className="mt-2 text-xs text-red-600">{langVideo.error}</div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
                 {/* Video Info */}
                 <div className="bg-gray-50 rounded-md p-4">
                   <h4 className="font-medium text-gray-900 mb-2">Video Details (Simulated)</h4>
@@ -508,11 +330,7 @@ export default function DemoVideoGenerator() {
                     <div>Estimated Cost: ${result.totalCost.toFixed(4)}</div>
                     <div>Scenes: {result.script.scenes.length}</div>
                     <div>Aspect Ratio: {aspectRatio}</div>
-                    {result.multiLanguage ? (
-                      <div>Languages: {result.languageVideos?.length || 0} ({result.languageVideos?.map((lv: any) => lv.languageName).join(', ')})</div>
-                    ) : (
-                      <div>Language: {language}</div>
-                    )}
+                    <div>Language: {language}</div>
                   </div>
                 </div>
 

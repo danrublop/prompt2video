@@ -17,9 +17,6 @@ export interface Job {
   updatedAt: Date
   steps: Step[]
   assets: Asset[]
-  multiLanguage?: boolean
-  targetLanguages?: string[]
-  languageVideos?: any[]
 }
 
 export interface Step {

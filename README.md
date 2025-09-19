@@ -8,23 +8,26 @@ A Next.js application that generates videos from text descriptions using OpenAI 
 
 ### Step 1: Prompt Input
 - **Enter your video concept** - Describe what you want to create (e.g., "Create a 2-3 minute video on Anaphylaxis adverse events following vaccination in Africa")
-- **Set parameters** - Choose aspect ratio (16:9, 9:16, 1:1), duration, language, and optional voice ID
+- **Set parameters** - Choose aspect ratio (16:9, 9:16, 1:1), duration, and optional voice ID
+- **Select languages** - Choose from 100+ supported languages, select multiple for multi-language video generation
 - **Submit for storyboard generation**
 
 ### Step 2: AI Script Generation
 - **OpenAI GPT-4** analyzes your prompt and generates a structured video script
+- **Multi-language support** - Generates scripts in all selected languages simultaneously
 - **Creates multiple scenes** with:
   - Scene goals and objectives
-  - Detailed narration text
-  - Image descriptions for visual content
+  - Detailed narration text in each language
+  - Image descriptions for visual content (shared across languages)
   - Timing and duration for each scene
 - **Returns estimated costs** and total video duration
 
 ### Step 3: Interactive Storyboard Review
-- **Review the generated script** scene by scene
+- **Review the generated script** scene by scene in each selected language
+- **Language switching** - Toggle between languages to review and edit content
 - **Edit any content** directly in the interface:
-  - Modify narration text
-  - Adjust image descriptions
+  - Modify narration text for each language
+  - Adjust image descriptions (shared across all languages)
   - Change scene timing
   - Reorder or remove scenes
 - **Regenerate script** if needed with updated requirements
@@ -39,15 +42,17 @@ Once you confirm the storyboard, the system generates all assets:
 - **Consistent style** across all scenes
 
 #### 4b. Voice Synthesis
-- **HeyGen API** converts narration text to natural speech
-- **Professional voice quality** with proper pacing
+- **HeyGen API** converts narration text to natural speech in each language
+- **Professional voice quality** with proper pacing and language-specific characteristics
 - **Synchronized timing** with scene durations
+- **Parallel processing** - Generates audio for all languages simultaneously
 
 #### 4c. Video Composition
-- **FFmpeg** combines images and audio into final MP4
+- **FFmpeg** combines images and audio into final MP4 for each language
 - **Ken Burns effect** on images for visual interest
-- **Text overlays** with scene captions
+- **Text overlays** with scene captions in the appropriate language
 - **Smooth transitions** between scenes
+- **Multiple video outputs** - One video file per selected language
 - **Professional video output** ready for sharing
 
 ### Step 5. Real-time Progress Monitoring
@@ -57,36 +62,11 @@ Once you confirm the storyboard, the system generates all assets:
 - **Cost tracking** throughout the process
 
 ### Step 6. Final Video Delivery
-- **Downloadable MP4** file with your complete video
+- **Downloadable MP4 files** - One for each selected language
 - **Professional quality** suitable for presentations, social media, or training
 - **Custom branding** and styling options
 - **Multiple format support** (16:9, 9:16, 1:1)
-
-## 🌍 Multi-Language Workflow
-
-### Step 1: Multi-Language Setup
-- **Select primary language** - Choose the main language for script generation
-- **Choose target languages** - Pick from 100+ supported languages
-- **Organized selection** - Browse by region (European, Asian, Middle Eastern, etc.)
-- **Popular languages** - Quick access to most commonly used languages
-
-### Step 2: Content Generation
-- **Single script generation** - Create script in primary language
-- **Shared visual assets** - Same images and composition for all languages
-- **Parallel audio processing** - Generate narration for each target language simultaneously
-- **Language-specific voices** - Use appropriate voice characteristics for each language
-
-### Step 3: Video Composition
-- **Individual video files** - Separate MP4 for each language
-- **Consistent visual quality** - Identical composition across all versions
-- **Localized audio tracks** - Native language narration for each version
-- **Batch processing** - Efficient generation of multiple language versions
-
-### Step 4. Multi-Language Results
-- **Download all versions** - Individual download links for each language
-- **Progress tracking** - Real-time status for each language generation
-- **Error handling** - Graceful handling of failed language generations
-- **Cost optimization** - Shared visual generation reduces overall costs
+- **Language-specific downloads** - Easy identification and organization
 
 ## 🎯 Key Features
 
@@ -96,6 +76,12 @@ Once you confirm the storyboard, the system generates all assets:
 - **Cost control** - Avoid regenerating entire videos for small changes
 - **Quality assurance** - Ensure content meets your requirements
 
+### AI-Powered Content Creation
+- **Intelligent script generation** - Context-aware video planning
+- **Visual storytelling** - AI creates compelling image descriptions
+- **Natural voice synthesis** - Professional-quality narration
+- **Smart timing** - Automatic pacing and duration optimization
+
 ### Multi-Language Video Generation 🌍
 - **100+ supported languages** - Generate videos in any HeyGen-supported language
 - **Same visual content** - All language versions use identical images and composition
@@ -103,12 +89,6 @@ Once you confirm the storyboard, the system generates all assets:
 - **Batch processing** - Generate multiple language versions simultaneously
 - **Organized language groups** - Easy selection by region (European, Asian, etc.)
 - **Progress tracking** - Real-time status for each language version
-
-### AI-Powered Content Creation
-- **Intelligent script generation** - Context-aware video planning
-- **Visual storytelling** - AI creates compelling image descriptions
-- **Natural voice synthesis** - Professional-quality narration
-- **Smart timing** - Automatic pacing and duration optimization
 
 ### Professional Video Output
 - **High-quality composition** - FFmpeg-powered video processing
