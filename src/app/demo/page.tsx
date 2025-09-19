@@ -2,25 +2,29 @@
 
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
+import { SUPPORTED_LANGUAGES, LANGUAGE_REGIONS, getLanguagesByRegion, getPopularLanguages } from '@/lib/languages'
 
 export default function DemoVideoGenerator() {
   const searchParams = useSearchParams()
   const [prompt, setPrompt] = useState('')
   const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16' | '1:1'>('16:9')
   const [duration, setDuration] = useState(150) // 2.5 minutes in seconds
-  const [language, setLanguage] = useState('English')
+  const [selectedLanguages, setSelectedLanguages] = useState<string[]>(['en'])
   const [voiceId, setVoiceId] = useState('')
+  const [showAllLanguages, setShowAllLanguages] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
   const [isLoadingJob, setIsLoadingJob] = useState(false)
   const [error, setError] = useState('')
   const [currentJob, setCurrentJob] = useState<any>(null)
   const [result, setResult] = useState<{
     video: string
+    videos?: { [language: string]: string }
     script: any
     totalCost: number
     duration: number
     demo: boolean
     message: string
+    languages?: string[]
   } | null>(null)
 
   // Check for job ID in URL parameters
@@ -50,11 +54,13 @@ export default function DemoVideoGenerator() {
       if (jobData.status === 'DONE') {
         setResult({
           video: jobData.resultUrl || 'mock-video-url',
+          videos: jobData.resultUrls,
           script: jobData.steps?.find((s: any) => s.type === 'SCRIPT')?.payload || { scenes: [] },
           totalCost: jobData.totalCost || 0,
           duration: jobData.duration || 150,
           demo: true,
-          message: "Demo video generated successfully! (This is mock data - add API keys for real generation)"
+          message: `Demo video${jobData.languages && jobData.languages.length > 1 ? 's' : ''} generated successfully! (This is mock data - add API keys for real generation)`,
+          languages: jobData.languages || ['en']
         })
       }
     } catch (err) {
@@ -92,12 +98,27 @@ export default function DemoVideoGenerator() {
       prompt: prompt.trim(),
       aspectRatio,
       duration: duration.toString(),
-      language,
+      languages: selectedLanguages.join(','),
       voiceId: voiceId.trim() || '',
       demo: 'true', // Mark as demo
     })
 
     window.location.href = `/storyboard?${params.toString()}`
+  }
+
+  const toggleLanguage = (languageCode: string) => {
+    setSelectedLanguages(prev => 
+      prev.includes(languageCode) 
+        ? prev.filter(lang => lang !== languageCode)
+        : [...prev, languageCode]
+    )
+  }
+
+  const getSelectedLanguageNames = () => {
+    return selectedLanguages.map(code => {
+      const lang = SUPPORTED_LANGUAGES.find(l => l.code === code)
+      return lang ? lang.name : code
+    }).join(', ')
   }
 
   return (
@@ -112,7 +133,8 @@ export default function DemoVideoGenerator() {
           <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-md">
             <p className="text-yellow-800 text-sm">
               <strong>Demo Mode:</strong> This version uses mock data and simulated responses. 
-              No real videos are generated. Add your API keys to the main app for real video generation.
+              No real videos are generated. Test the multi-language workflow and storyboard editing. 
+              Add your API keys to the main app for real video generation.
             </p>
           </div>
         </div>
@@ -237,37 +259,103 @@ export default function DemoVideoGenerator() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Language
-                  </label>
-                  <select
-                    value={language}
-                    onChange={(e) => setLanguage(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    disabled={isGenerating}
-                  >
-                    <option value="English">English</option>
-                    <option value="Spanish">Spanish</option>
-                    <option value="French">French</option>
-                    <option value="German">German</option>
-                  </select>
-                </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Languages ({selectedLanguages.length} selected)
+                </label>
+                <div className="space-y-3">
+                  {/* Selected Languages Display */}
+                  {selectedLanguages.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {selectedLanguages.map(code => {
+                        const lang = SUPPORTED_LANGUAGES.find(l => l.code === code)
+                        return (
+                          <span
+                            key={code}
+                            className="inline-flex items-center px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-800"
+                          >
+                            {lang?.name || code}
+                            <button
+                              type="button"
+                              onClick={() => toggleLanguage(code)}
+                              className="ml-2 text-blue-600 hover:text-blue-800"
+                              disabled={isGenerating}
+                            >
+                              ×
+                            </button>
+                          </span>
+                        )
+                      })}
+                    </div>
+                  )}
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Voice ID (optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={voiceId}
-                    onChange={(e) => setVoiceId(e.target.value)}
-                    placeholder="Leave empty for default"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    disabled={isGenerating}
-                  />
+                  {/* Language Selection */}
+                  <div className="border border-gray-300 rounded-md p-3 max-h-48 overflow-y-auto">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium text-gray-700">
+                        {showAllLanguages ? 'All Languages' : 'Popular Languages'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowAllLanguages(!showAllLanguages)}
+                        className="text-sm text-blue-600 hover:text-blue-800"
+                        disabled={isGenerating}
+                      >
+                        {showAllLanguages ? 'Show Popular' : 'Show All'}
+                      </button>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      {LANGUAGE_REGIONS.map(region => {
+                        const languages = showAllLanguages 
+                          ? getLanguagesByRegion(region)
+                          : getLanguagesByRegion(region).filter(lang => 
+                              getPopularLanguages().some(popular => popular.code === lang.code)
+                            )
+                        
+                        if (languages.length === 0) return null
+                        
+                        return (
+                          <div key={region}>
+                            <div className="text-xs font-medium text-gray-500 mb-1">{region}</div>
+                            <div className="grid grid-cols-1 gap-1">
+                              {languages.map(lang => (
+                                <label
+                                  key={lang.code}
+                                  className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-gray-50 p-1 rounded"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedLanguages.includes(lang.code)}
+                                    onChange={() => toggleLanguage(lang.code)}
+                                    disabled={isGenerating}
+                                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                  />
+                                  <span className="text-gray-700">{lang.name}</span>
+                                  <span className="text-gray-500 text-xs">({lang.nativeName})</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Voice ID (optional)
+                </label>
+                <input
+                  type="text"
+                  value={voiceId}
+                  onChange={(e) => setVoiceId(e.target.value)}
+                  placeholder="Leave empty for default"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={isGenerating}
+                />
               </div>
 
               {error && (
@@ -330,15 +418,57 @@ export default function DemoVideoGenerator() {
                     <div>Estimated Cost: ${result.totalCost.toFixed(4)}</div>
                     <div>Scenes: {result.script.scenes.length}</div>
                     <div>Aspect Ratio: {aspectRatio}</div>
-                    <div>Language: {language}</div>
+                    <div>Languages: {result.languages ? result.languages.length : 1}</div>
+                    {result.languages && result.languages.length > 1 && (
+                      <div className="mt-2">
+                        <div className="text-xs font-medium text-gray-700 mb-1">Selected Languages:</div>
+                        <div className="flex flex-wrap gap-1">
+                          {result.languages.map(langCode => {
+                            const lang = SUPPORTED_LANGUAGES.find(l => l.code === langCode)
+                            return (
+                              <span key={langCode} className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                                {lang?.name || langCode}
+                              </span>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
+
+                {/* Multi-Language Video Display */}
+                {result.videos && Object.keys(result.videos).length > 1 && (
+                  <div className="space-y-3">
+                    <h4 className="font-medium text-gray-900">Generated Videos (Demo)</h4>
+                    {Object.entries(result.videos).map(([langCode, videoUrl]) => {
+                      const lang = SUPPORTED_LANGUAGES.find(l => l.code === langCode)
+                      return (
+                        <div key={langCode} className="border border-gray-200 rounded-md p-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <h5 className="font-medium text-gray-900">
+                              {lang?.name || langCode} Version
+                            </h5>
+                            <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
+                              Demo Video
+                            </span>
+                          </div>
+                          <div className="bg-gray-100 rounded p-4 text-center text-gray-600 text-sm">
+                            🎬 Mock video for {lang?.name || langCode} language
+                            <br />
+                            <span className="text-xs">(Add API keys for real video generation)</span>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
 
                 {/* Next Steps */}
                 <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
                   <h4 className="font-medium text-blue-900 mb-2">Ready for Real Generation?</h4>
                   <p className="text-blue-800 text-sm mb-2">
-                    To generate actual videos, you'll need to:
+                    To generate actual videos in multiple languages, you'll need to:
                   </p>
                   <ul className="text-blue-800 text-xs space-y-1 list-disc list-inside">
                     <li>Add your OpenAI API key to the environment</li>
@@ -346,6 +476,9 @@ export default function DemoVideoGenerator() {
                     <li>Install FFmpeg for video processing (see FFMPEG_SETUP.md)</li>
                     <li>No database or external services required!</li>
                   </ul>
+                  <div className="mt-2 p-2 bg-green-100 rounded text-xs">
+                    <strong>Multi-Language Support:</strong> Generate videos in 100+ languages with shared visuals and localized audio.
+                  </div>
                   <div className="mt-2 p-2 bg-yellow-100 rounded text-xs">
                     <strong>Note:</strong> Without FFmpeg, the app will create mock video files for demonstration.
                   </div>
