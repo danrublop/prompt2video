@@ -10,9 +10,15 @@ export async function GET(
     const { id: jobId } = await params
 
       // Try both processors to find the job
+      console.log('Looking for job:', jobId)
       let job = await simpleProcessor.getJob(jobId)
       if (!job) {
+        console.log('Job not found in simple processor, trying multi-language processor')
         job = await multiLanguageProcessor.getJob(jobId)
+      }
+      
+      if (job) {
+        console.log('Job found:', job.id, 'multiLanguage:', job.multiLanguage, 'languageVideos:', job.languageVideos?.length || 0)
       }
 
     if (!job) {

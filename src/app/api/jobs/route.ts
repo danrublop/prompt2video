@@ -6,6 +6,8 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     
+    console.log('Job creation request body:', JSON.stringify(body, null, 2))
+    
     // Validate required fields
     if (!body.prompt || body.prompt.trim().length === 0) {
       return NextResponse.json(
@@ -16,6 +18,7 @@ export async function POST(request: NextRequest) {
 
     // Use multi-language processor if multi-language is requested
     const processor = body.multiLanguage ? multiLanguageProcessor : simpleProcessor
+    console.log('Using processor:', body.multiLanguage ? 'multiLanguageProcessor' : 'simpleProcessor')
     
     // Create and process job
     const job = await processor.createJob({
