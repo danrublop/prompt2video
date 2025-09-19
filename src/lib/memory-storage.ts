@@ -12,7 +12,9 @@ export interface Job {
   status: 'QUEUED' | 'RUNNING' | 'FAILED' | 'DONE'
   totalCost: number
   resultUrl?: string
+  resultUrls?: { [language: string]: string }
   styleProfile: string
+  script?: any
   createdAt: Date
   updatedAt: Date
   steps: Step[]

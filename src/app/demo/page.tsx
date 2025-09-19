@@ -48,6 +48,8 @@ export default function DemoVideoGenerator() {
       }
       const jobData = await response.json()
       console.log('Job data received:', jobData)
+      console.log('Job languages:', jobData.languages)
+      console.log('Job resultUrls:', jobData.resultUrls)
       setCurrentJob(jobData)
       
       // If job is done, show results
@@ -438,10 +440,10 @@ export default function DemoVideoGenerator() {
                 </div>
 
                 {/* Multi-Language Video Display */}
-                {result.videos && Object.keys(result.videos).length > 1 && (
+                {result.languages && result.languages.length > 1 && (
                   <div className="space-y-3">
                     <h4 className="font-medium text-gray-900">Generated Videos (Demo)</h4>
-                    {Object.entries(result.videos).map(([langCode, videoUrl]) => {
+                    {result.languages.map((langCode) => {
                       const lang = SUPPORTED_LANGUAGES.find(l => l.code === langCode)
                       return (
                         <div key={langCode} className="border border-gray-200 rounded-md p-3">

@@ -40,11 +40,12 @@ class SimpleProcessor {
       prompt: request.prompt,
       aspectRatio: request.aspectRatio,
       duration: request.duration,
-      language: request.languages[0], // Use first language as primary
+      language: request.languages.join(','), // Store all languages as comma-separated string
       voiceId: request.voiceId,
       status: 'QUEUED',
       totalCost: 0,
-      styleProfile: request.styleProfile || 'Modern medical infographic style, high contrast, minimal text, friendly but professional icons, clean typography, muted color palette with accent colors'
+      styleProfile: request.styleProfile || 'Modern medical infographic style, high contrast, minimal text, friendly but professional icons, clean typography, muted color palette with accent colors',
+      script: request.script // Store the script with multi-language support
     })
 
     // Start processing immediately (no queue needed)
@@ -98,7 +99,10 @@ class SimpleProcessor {
       if (job.script) {
         // Use pre-generated script from storyboard
         script = job.script
-        console.log(`Using pre-generated script with ${script.scenes.length} scenes`)
+        console.log(`Using pre-generated script with ${script.scenes?.length || 0} scenes`)
+        if (script.languages) {
+          console.log(`Multi-language script with languages: ${Object.keys(script.languages).join(', ')}`)
+        }
       } else {
         // Generate new script for first language only
         script = isDemoMode 
@@ -111,7 +115,9 @@ class SimpleProcessor {
       // Step 2: Generate Images (shared across all languages)
       await this.updateStepStatus(jobId, 'IMAGES', 'RUNNING')
       const imageAssets = []
+      // Use the first language's scenes for image generation (images are shared)
       const scenes = script.languages ? script.languages[languages[0]]?.scenes || script.scenes : script.scenes
+      console.log(`Generating images for ${scenes.length} scenes`)
       
       for (let i = 0; i < scenes.length; i++) {
         const scene = scenes[i]
@@ -137,6 +143,7 @@ class SimpleProcessor {
         
         // Get scenes for this language
         const langScenes = script.languages ? script.languages[langCode]?.scenes || scenes : scenes
+        console.log(`Using ${langScenes.length} scenes for language ${langCode}`)
         
         const audioAssets = []
         for (let i = 0; i < langScenes.length; i++) {
@@ -267,16 +274,27 @@ class SimpleProcessor {
   }
 
   private jobToResponse(job: Job): JobResponse {
+    const languages = job.language ? job.language.split(',') : [job.language || 'en']
+    const resultUrls = job.resultUrls || (job.resultUrl ? { [languages[0]]: job.resultUrl } : undefined)
+    
+    console.log('Converting job to response:', {
+      id: job.id,
+      languages,
+      resultUrls,
+      hasResultUrls: !!job.resultUrls,
+      hasResultUrl: !!job.resultUrl
+    })
+    
     return {
       id: job.id,
       status: job.status,
       prompt: job.prompt,
       aspectRatio: job.aspectRatio,
       duration: job.duration,
-      languages: job.language ? job.language.split(',') : [job.language || 'en'],
+      languages,
       voiceId: job.voiceId,
       totalCost: job.totalCost,
-      resultUrls: job.resultUrls || (job.resultUrl ? { [job.language || 'en']: job.resultUrl } : undefined),
+      resultUrls,
       createdAt: job.createdAt.toISOString(),
       updatedAt: job.updatedAt.toISOString(),
       steps: job.steps,
