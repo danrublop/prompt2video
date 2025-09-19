@@ -269,6 +269,8 @@ export class MultiLanguageProcessor {
         status: 'DONE',
         resultUrl: primaryLanguageVideo?.videoUrl,
         totalCost,
+        multiLanguage: true,
+        targetLanguages: job.targetLanguages,
         languageVideos
       })
 
