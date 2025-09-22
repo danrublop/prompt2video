@@ -9,7 +9,7 @@ export default function Home() {
   const searchParams = useSearchParams()
   const [prompt, setPrompt] = useState('')
   const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16' | '1:1'>('16:9')
-  const [duration, setDuration] = useState(150) // 2.5 minutes in seconds
+  const [duration, setDuration] = useState(60) // 1 minute in seconds
   const [selectedLanguages, setSelectedLanguages] = useState<string[]>(['en'])
   const [showAllLanguages, setShowAllLanguages] = useState(false)
   const [voiceId, setVoiceId] = useState('')
@@ -270,13 +270,20 @@ export default function Home() {
                   </label>
                   <select
                     value={duration / 60}
-                    onChange={(e) => setDuration(parseInt(e.target.value) * 60)}
+                    onChange={(e) => setDuration(parseFloat(e.target.value) * 60)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     disabled={isGenerating}
                   >
+                    <option value={0.5}>30 seconds</option>
+                    <option value={1}>1 minute</option>
+                    <option value={1.5}>1.5 minutes</option>
                     <option value={2}>2 minutes</option>
                     <option value={2.5}>2.5 minutes</option>
                     <option value={3}>3 minutes</option>
+                    <option value={4}>4 minutes</option>
+                    <option value={5}>5 minutes</option>
+                    <option value={7.5}>7.5 minutes</option>
+                    <option value={10}>10 minutes</option>
                   </select>
                 </div>
               </div>
