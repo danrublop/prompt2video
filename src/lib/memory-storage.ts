@@ -9,6 +9,8 @@ export interface Job {
   duration: number
   language: string
   voiceId?: string
+  ttsProvider?: 'heygen' | 'openai'
+  openaiVoice?: string
   status: 'QUEUED' | 'RUNNING' | 'FAILED' | 'DONE'
   totalCost: number
   resultUrl?: string
@@ -44,11 +46,17 @@ export interface Asset {
   updatedAt: Date
 }
 
+// Global storage to ensure persistence across requests
+declare global {
+  var __memoryStorage: MemoryStorage | undefined
+}
+
 class MemoryStorage {
   private jobs: Map<string, Job> = new Map()
   private steps: Map<string, Step> = new Map()
   private assets: Map<string, Asset> = new Map()
   private tempDir: string
+  private totalUsage: number = 0
 
   constructor() {
     this.tempDir = path.join(process.cwd(), 'temp', 'storage')
@@ -77,13 +85,23 @@ class MemoryStorage {
       assets: []
     }
     
+    console.log(`MemoryStorage: Creating job ${id}`)
     this.jobs.set(id, job)
+    console.log(`MemoryStorage: Job ${id} stored, total jobs: ${this.jobs.size}`)
     return job
   }
 
   async getJob(id: string): Promise<Job | null> {
+    console.log(`MemoryStorage: Looking for job ${id}`)
+    console.log(`MemoryStorage: Available jobs:`, Array.from(this.jobs.keys()))
+    
     const job = this.jobs.get(id)
-    if (!job) return null
+    if (!job) {
+      console.log(`MemoryStorage: Job ${id} not found in memory`)
+      return null
+    }
+
+    console.log(`MemoryStorage: Found job ${id}, status: ${job.status}`)
 
     // Get related steps and assets
     const jobSteps = Array.from(this.steps.values()).filter(step => step.jobId === id)
@@ -94,6 +112,23 @@ class MemoryStorage {
       steps: jobSteps,
       assets: jobAssets
     }
+  }
+
+  async getAllJobs(): Promise<Job[]> {
+    console.log(`MemoryStorage: Getting all jobs, total: ${this.jobs.size}`)
+    const jobs = Array.from(this.jobs.values())
+    
+    // Get related steps and assets for each job
+    return jobs.map(job => {
+      const jobSteps = Array.from(this.steps.values()).filter(step => step.jobId === job.id)
+      const jobAssets = Array.from(this.assets.values()).filter(asset => asset.jobId === job.id)
+      
+      return {
+        ...job,
+        steps: jobSteps,
+        assets: jobAssets
+      }
+    })
   }
 
   async updateJob(id: string, updates: Partial<Job>): Promise<Job | null> {
@@ -189,17 +224,45 @@ class MemoryStorage {
     await fs.mkdir(dir, { recursive: true })
     await fs.writeFile(filePath, data)
     
-    // Return a local file URL
-    return `file://${filePath}`
+    // Return an HTTP URL that can be served by our API
+    return `/api/assets/${jobId}/${type}/${filename}`
   }
 
   async getFile(url: string): Promise<Buffer> {
-    const filePath = url.replace('file://', '')
+    // Handle both old file:// URLs and new HTTP URLs
+    let filePath: string
+    if (url.startsWith('file://')) {
+      filePath = url.replace('file://', '')
+    } else if (url.startsWith('/api/assets/')) {
+      // Convert API URL back to file path
+      const parts = url.split('/')
+      const jobId = parts[3]
+      const type = parts[4]
+      const filename = parts[5]
+      filePath = path.join(this.tempDir, jobId, type, filename)
+    } else {
+      throw new Error(`Unsupported URL format: ${url}`)
+    }
+    
     return fs.readFile(filePath)
   }
 
   async deleteFile(url: string): Promise<void> {
-    const filePath = url.replace('file://', '')
+    let filePath: string
+    if (url.startsWith('file://')) {
+      filePath = url.replace('file://', '')
+    } else if (url.startsWith('/api/assets/')) {
+      // Convert API URL back to file path
+      const parts = url.split('/')
+      const jobId = parts[3]
+      const type = parts[4]
+      const filename = parts[5]
+      filePath = path.join(this.tempDir, jobId, type, filename)
+    } else {
+      console.warn(`Unsupported URL format for deletion: ${url}`)
+      return
+    }
+    
     try {
       await fs.unlink(filePath)
     } catch (error) {
@@ -229,15 +292,38 @@ class MemoryStorage {
     await this.deleteJob(jobId)
   }
 
+  // Usage tracking
+  async addUsage(amount: number): Promise<void> {
+    this.totalUsage += amount
+  }
+
+  async getTotalUsage(): Promise<number> {
+    // If explicit counter is zero, derive from current jobs' totalCost to capture historical runs
+    if (this.totalUsage === 0) {
+      let derived = 0
+      for (const job of this.jobs.values()) {
+        derived += job.totalCost || 0
+      }
+      return derived
+    }
+    return this.totalUsage
+  }
+
+  async resetUsage(): Promise<void> {
+    this.totalUsage = 0
+  }
+
   // Health check
-  async healthCheck(): Promise<{ status: string; jobs: number; steps: number; assets: number }> {
+  async healthCheck(): Promise<{ status: string; jobs: number; steps: number; assets: number; totalUsage: number }> {
     return {
       status: 'healthy',
       jobs: this.jobs.size,
       steps: this.steps.size,
-      assets: this.assets.size
+      assets: this.assets.size,
+      totalUsage: this.totalUsage
     }
   }
 }
 
-export const memoryStorage = new MemoryStorage()
+// Use global storage to ensure persistence across requests in development
+export const memoryStorage = globalThis.__memoryStorage || (globalThis.__memoryStorage = new MemoryStorage())

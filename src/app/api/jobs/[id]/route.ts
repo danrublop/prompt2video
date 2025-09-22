@@ -8,15 +8,18 @@ export async function GET(
   try {
     const { id: jobId } = await params
 
+    console.log(`Fetching job with ID: ${jobId}`)
     const job = await simpleProcessor.getJob(jobId)
 
     if (!job) {
+      console.log(`Job not found: ${jobId}`)
       return NextResponse.json(
         { error: 'Job not found' },
         { status: 404 }
       )
     }
 
+    console.log(`Job found: ${jobId}, status: ${job.status}`)
     return NextResponse.json(job)
 
   } catch (error) {

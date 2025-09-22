@@ -36,14 +36,27 @@ export default function DemoVideoGenerator() {
     }
   }, [searchParams])
 
-  const fetchJobStatus = async (jobId: string) => {
+  const fetchJobStatus = async (jobId: string, retryCount = 0) => {
     setIsLoadingJob(true)
     try {
-      console.log('Fetching job status for:', jobId)
+      console.log(`Fetching job status for: ${jobId} (attempt ${retryCount + 1})`)
       const response = await fetch(`/api/jobs/${jobId}`)
       if (!response.ok) {
         const errorText = await response.text()
         console.error('Job fetch failed:', response.status, errorText)
+        if (response.status === 404) {
+          // If job not found and we haven't retried too many times, wait and retry
+          if (retryCount < 3) {
+            console.log(`Job not found, retrying in ${(retryCount + 1) * 1000}ms...`)
+            setTimeout(() => {
+              fetchJobStatus(jobId, retryCount + 1)
+            }, (retryCount + 1) * 1000)
+            return
+          }
+          setError('Job not found. It may have been cleaned up or expired.')
+          setCurrentJob(null)
+          return
+        }
         throw new Error(`Failed to fetch job status: ${response.status} ${errorText}`)
       }
       const jobData = await response.json()
@@ -174,6 +187,25 @@ export default function DemoVideoGenerator() {
                   </div>
                 </div>
 
+                {/* Generate New Video Button for Failed Jobs */}
+                {currentJob.status === 'FAILED' && (
+                  <div className="pt-4 border-t border-gray-200">
+                    <button
+                      onClick={() => {
+                        setCurrentJob(null)
+                        setResult(null)
+                        setError('')
+                        setPrompt('')
+                        setSelectedLanguages(['en'])
+                        setShowAllLanguages(false)
+                      }}
+                      className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors font-medium"
+                    >
+                      Generate New Video
+                    </button>
+                  </div>
+                )}
+
                 {/* Steps Timeline */}
                 <div className="space-y-3">
                   <h3 className="font-medium text-gray-900">Processing Steps</h3>
@@ -204,10 +236,105 @@ export default function DemoVideoGenerator() {
                   })}
                 </div>
 
+                {/* Generated Assets */}
+                {currentJob.assets && currentJob.assets.length > 0 && (
+                  <div className="space-y-3">
+                    <h3 className="font-medium text-gray-900">Generated Assets</h3>
+                    <div className="space-y-3">
+                      {currentJob.assets.map((asset: any) => (
+                        <div key={asset.id} className="bg-gray-50 rounded-md p-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm font-medium text-gray-700">
+                              {asset.kind.toLowerCase()} - Scene {asset.meta?.sceneIndex !== undefined ? asset.meta.sceneIndex + 1 : 'unknown'}
+                            </span>
+                            {asset.kind === 'VIDEO' && (
+                              <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                                AI Generated
+                              </span>
+                            )}
+                          </div>
+                          
+                          {asset.kind === 'IMAGE' && (
+                            <div className="space-y-2">
+                              <img
+                                src={asset.url}
+                                alt={`Scene ${asset.meta?.sceneIndex !== undefined ? asset.meta.sceneIndex + 1 : 'unknown'} image`}
+                                className="w-full max-w-sm rounded-md border border-gray-200"
+                                onError={(e) => {
+                                  console.error('Image failed to load:', asset.url);
+                                  e.currentTarget.style.display = 'none';
+                                }}
+                              />
+                              <a
+                                href={asset.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-block text-blue-600 hover:text-blue-800 text-sm"
+                              >
+                                View Full Size
+                              </a>
+                            </div>
+                          )}
+                          
+                          {asset.kind === 'AUDIO' && (
+                            <div className="space-y-2">
+                              <audio controls className="w-full">
+                                <source src={asset.url} type="audio/mpeg" />
+                                Your browser does not support the audio element.
+                              </audio>
+                              <a
+                                href={asset.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-block text-blue-600 hover:text-blue-800 text-sm"
+                              >
+                                Download Audio
+                              </a>
+                            </div>
+                          )}
+                          
+                          {asset.kind === 'VIDEO' && (
+                            <div className="space-y-2">
+                              <video controls className="w-full max-w-sm rounded-md">
+                                <source src={asset.url} type="video/mp4" />
+                                Your browser does not support the video element.
+                              </video>
+                              <a
+                                href={asset.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-block text-blue-600 hover:text-blue-800 text-sm"
+                              >
+                                Download Video
+                              </a>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {isLoadingJob && (
                   <div className="text-center text-gray-500 py-4">
                     <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto mb-2"></div>
                     Loading job status...
+                  </div>
+                )}
+
+                {error && (
+                  <div className="bg-red-50 border border-red-200 rounded-md p-3">
+                    <p className="text-red-600 text-sm">{error}</p>
+                    <button
+                      onClick={() => {
+                        setError('')
+                        setCurrentJob(null)
+                        setResult(null)
+                      }}
+                      className="mt-2 bg-red-600 text-white py-1 px-3 rounded text-sm hover:bg-red-700 transition-colors"
+                    >
+                      Start Over
+                    </button>
                   </div>
                 )}
               </div>
@@ -484,6 +611,23 @@ export default function DemoVideoGenerator() {
                   <div className="mt-2 p-2 bg-yellow-100 rounded text-xs">
                     <strong>Note:</strong> Without FFmpeg, the app will create mock video files for demonstration.
                   </div>
+                </div>
+
+                {/* Generate New Video Button */}
+                <div className="pt-4 border-t border-gray-200">
+                  <button
+                    onClick={() => {
+                      setResult(null)
+                      setCurrentJob(null)
+                      setError('')
+                      setPrompt('')
+                      setSelectedLanguages(['en'])
+                      setShowAllLanguages(false)
+                    }}
+                    className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors font-medium"
+                  >
+                    Generate New Video
+                  </button>
                 </div>
               </div>
             )}

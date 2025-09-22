@@ -13,6 +13,25 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    console.log('Creating job with data:', {
+      prompt: body.prompt,
+      languages: body.languages,
+      hasScript: !!body.script,
+      aspectRatio: body.aspectRatio,
+      duration: body.duration
+    })
+
+    // Validate TTS provider prerequisites
+    if (body.ttsProvider === 'openai') {
+      const key = process.env.OPENAI_API_KEY
+      if (!key || key === 'mock' || key === 'your_openai_api_key_here') {
+        return NextResponse.json(
+          { error: 'OpenAI TTS selected but OPENAI_API_KEY is not set on the server.' },
+          { status: 422 }
+        )
+      }
+    }
+
     // Create and process job
     const job = await simpleProcessor.createJob({
       prompt: body.prompt.trim(),
@@ -20,8 +39,16 @@ export async function POST(request: NextRequest) {
       duration: body.duration || 150, // 2.5 minutes default
       languages: body.languages || ['en'],
       voiceId: body.voiceId,
+      ttsProvider: body.ttsProvider,
+      openaiVoice: body.openaiVoice,
       styleProfile: body.styleProfile,
       script: body.script, // Pass through the script from storyboard
+    })
+
+    console.log('Job created successfully:', {
+      id: job.id,
+      status: job.status,
+      createdAt: job.createdAt
     })
 
     return NextResponse.json({

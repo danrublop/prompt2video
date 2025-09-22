@@ -252,3 +252,5 @@ This project is licensed under the MIT License.
 ---
 
 **Ready to create amazing videos?** Start with demo mode, then add your API keys for real video generation!
+
+

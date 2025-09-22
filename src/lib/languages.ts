@@ -118,3 +118,5 @@ export function getPopularLanguages(): Language[] {
     ['en', 'es', 'fr', 'de', 'it', 'pt', 'ru', 'zh', 'ja', 'ko', 'ar', 'hi'].includes(lang.code)
   );
 }
+
+

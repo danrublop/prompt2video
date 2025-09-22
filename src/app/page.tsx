@@ -11,13 +11,28 @@ export default function Home() {
   const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16' | '1:1'>('16:9')
   const [duration, setDuration] = useState(150) // 2.5 minutes in seconds
   const [selectedLanguages, setSelectedLanguages] = useState<string[]>(['en'])
-  const [voiceId, setVoiceId] = useState('')
   const [showAllLanguages, setShowAllLanguages] = useState(false)
+  const [voiceId, setVoiceId] = useState('')
+  const [ttsProvider, setTtsProvider] = useState<'heygen' | 'openai'>('heygen')
+  const [openaiVoice, setOpenaiVoice] = useState('alloy')
   const [currentJob, setCurrentJob] = useState<JobResponse | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
   const [isLoadingJob, setIsLoadingJob] = useState(false)
   const [error, setError] = useState('')
   const [abortController, setAbortController] = useState<AbortController | null>(null)
+  const [totalUsage, setTotalUsage] = useState(0)
+
+  const fetchUsage = async () => {
+    try {
+      const response = await fetch('/api/usage')
+      if (response.ok) {
+        const data = await response.json()
+        setTotalUsage(data.totalUsage || 0)
+      }
+    } catch (error) {
+      console.error('Failed to fetch usage:', error)
+    }
+  }
 
   // Check for job ID in URL parameters
   useEffect(() => {
@@ -30,6 +45,11 @@ export default function Home() {
       }, 1000)
     }
   }, [searchParams])
+
+  // Initial usage fetch on mount
+  useEffect(() => {
+    fetchUsage()
+  }, [])
 
   const createJob = async () => {
     if (!prompt.trim()) {
@@ -44,6 +64,8 @@ export default function Home() {
       duration: duration.toString(),
       languages: selectedLanguages.join(','),
       voiceId: voiceId.trim() || '',
+      ttsProvider,
+      openaiVoice,
     })
 
     window.location.href = `/storyboard?${params.toString()}`
@@ -52,18 +74,29 @@ export default function Home() {
   const fetchJobStatus = async (jobId: string) => {
     setIsLoadingJob(true)
     try {
-      console.log('Fetching job status for:', jobId)
       const response = await fetch(`/api/jobs/${jobId}`, {
         signal: abortController?.signal,
       })
       if (!response.ok) {
         const errorText = await response.text()
         console.error('Job fetch failed:', response.status, errorText)
+        if (response.status === 404) {
+          setError('Job not found. It may have been cleaned up or expired.')
+          setCurrentJob(null)
+          return
+        }
         throw new Error(`Failed to fetch job status: ${response.status} ${errorText}`)
       }
       const jobData = await response.json()
       console.log('Job data received:', jobData)
+      console.log('Job resultUrls:', jobData.resultUrls)
+      console.log('Job resultUrl:', jobData.resultUrl)
+      console.log('Job status:', jobData.status)
       setCurrentJob(jobData)
+      if (jobData.status === 'DONE' || jobData.status === 'FAILED') {
+        // Refresh usage when a job completes
+        fetchUsage()
+      }
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') {
         console.log('Job status fetch cancelled')
@@ -98,6 +131,7 @@ export default function Home() {
 
     return () => clearInterval(interval)
   }, [currentJob?.id, currentJob?.status])
+
 
   // Cleanup on unmount
   useEffect(() => {
@@ -164,8 +198,31 @@ export default function Home() {
           </p>
           <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md max-w-2xl mx-auto">
             <p className="text-blue-800 text-sm">
-              <strong>New:</strong> Interactive storyboard editing! Review and modify your video script before generation.
+              <strong>Multi-Language Support:</strong> Generate videos in 100+ languages with shared visuals and localized audio. Interactive storyboard editing included!
             </p>
+          </div>
+          <div className="mt-4 bg-white rounded-lg shadow-md p-4 max-w-md mx-auto">
+            <div className="flex justify-between items-center">
+              <span className="text-sm font-medium text-gray-700">Total OpenAI Usage:</span>
+              <span className="text-lg font-bold text-blue-600">${totalUsage.toFixed(4)}</span>
+            </div>
+            <div className="mt-2">
+              <button
+                onClick={async () => {
+                  if (confirm('Reset usage tracking? This cannot be undone.')) {
+                    try {
+                      await fetch('/api/usage', { method: 'POST' })
+                      setTotalUsage(0)
+                    } catch (error) {
+                      console.error('Failed to reset usage:', error)
+                    }
+                  }
+                }}
+                className="text-xs text-gray-500 hover:text-red-600"
+              >
+                Reset Usage
+              </button>
+            </div>
           </div>
         </div>
 
@@ -311,16 +368,71 @@ export default function Home() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Voice ID (optional)
+                  Text-to-Speech Provider
                 </label>
-                <input
-                  type="text"
-                  value={voiceId}
-                  onChange={(e) => setVoiceId(e.target.value)}
-                  placeholder="Leave empty for default"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  disabled={isGenerating}
-                />
+                <div className="space-y-3">
+                  <div className="flex space-x-4">
+                    <label className="flex items-center">
+                      <input
+                        type="radio"
+                        value="heygen"
+                        checked={ttsProvider === 'heygen'}
+                        onChange={(e) => setTtsProvider(e.target.value as 'heygen' | 'openai')}
+                        disabled={isGenerating}
+                        className="mr-2"
+                      />
+                      <span className="text-gray-700">HeyGen (Premium voices)</span>
+                    </label>
+                    <label className="flex items-center">
+                      <input
+                        type="radio"
+                        value="openai"
+                        checked={ttsProvider === 'openai'}
+                        onChange={(e) => setTtsProvider(e.target.value as 'heygen' | 'openai')}
+                        disabled={isGenerating}
+                        className="mr-2"
+                      />
+                      <span className="text-gray-700">OpenAI (Built-in voices)</span>
+                    </label>
+                  </div>
+                  
+                  {ttsProvider === 'heygen' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        HeyGen Voice ID (optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={voiceId}
+                        onChange={(e) => setVoiceId(e.target.value)}
+                        placeholder="Leave empty for default"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        disabled={isGenerating}
+                      />
+                    </div>
+                  )}
+                  
+                  {ttsProvider === 'openai' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        OpenAI Voice
+                      </label>
+                      <select
+                        value={openaiVoice}
+                        onChange={(e) => setOpenaiVoice(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        disabled={isGenerating}
+                      >
+                        <option value="alloy">Alloy (Neutral)</option>
+                        <option value="echo">Echo (Male)</option>
+                        <option value="fable">Fable (British)</option>
+                        <option value="onyx">Onyx (Deep)</option>
+                        <option value="nova">Nova (Female)</option>
+                        <option value="shimmer">Shimmer (Soft)</option>
+                      </select>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {error && (
@@ -332,10 +444,10 @@ export default function Home() {
               <div className="space-y-2">
                 <button
                   onClick={createJob}
-                  disabled={!prompt.trim()}
+                  disabled={isGenerating || !prompt.trim()}
                   className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
                 >
-                  Create Storyboard
+                  {isGenerating ? 'Creating Job...' : 'Create Storyboard'}
                 </button>
                 
                 {isGenerating && (
@@ -354,12 +466,7 @@ export default function Home() {
           <div className="bg-white rounded-lg shadow-md p-6">
             <h2 className="text-xl font-semibold text-gray-900 mb-4">Job Status</h2>
             
-            {isLoadingJob ? (
-              <div className="text-center text-gray-500 py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                Loading job status...
-              </div>
-            ) : !currentJob ? (
+            {!currentJob ? (
               <div className="text-center text-gray-500 py-8">
                 No active job. Create a video to see the status here.
               </div>
@@ -384,7 +491,12 @@ export default function Home() {
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="font-medium">Cost:</span>
-                    <span className="text-sm text-gray-600">${(currentJob.totalCost || 0).toFixed(4)}</span>
+                    <span className="text-sm text-gray-600">
+                      ${(currentJob.totalCost || 0).toFixed(4)}
+                      {currentJob.status === 'RUNNING' && (
+                        <span className="text-xs text-blue-600 ml-1">(updating...)</span>
+                      )}
+                    </span>
                   </div>
                 </div>
 
@@ -413,6 +525,29 @@ export default function Home() {
                   })}
                 </div>
 
+                {/* Partial Results - Show images even if job failed */}
+                {currentJob.assets && currentJob.assets.length > 0 && (
+                  <div className="space-y-4">
+                    <h3 className="font-medium text-gray-900">Generated Assets</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                      {currentJob.assets
+                        .filter(asset => asset.kind === 'IMAGE')
+                        .map((asset, index) => (
+                          <div key={asset.id} className="border border-gray-200 rounded-md p-2">
+                            <img
+                              src={asset.url}
+                              alt={`Scene ${asset.meta?.sceneIndex || index + 1}`}
+                              className="w-full h-32 object-cover rounded"
+                            />
+                            <p className="text-xs text-gray-600 mt-1">
+                              Scene {asset.meta?.sceneIndex || index + 1}
+                            </p>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Results */}
                 {currentJob.status === 'DONE' && (currentJob.resultUrls || currentJob.resultUrl) && (
                   <div className="space-y-4">
@@ -434,11 +569,12 @@ export default function Home() {
                                 controls
                                 className="w-full rounded-md mb-3"
                                 src={videoUrl}
+                                poster={currentJob.assets?.find(a => a.kind === 'IMAGE')?.url}
                               >
                                 Your browser does not support the video tag.
                               </video>
                               <a
-                                href={videoUrl}
+                                href={`${videoUrl}?download=1`}
                                 download={`video_${langCode}.mp4`}
                                 className="inline-block bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 text-center transition-colors"
                               >
@@ -455,12 +591,13 @@ export default function Home() {
                           controls
                           className="w-full rounded-md"
                           src={currentJob.resultUrl}
+                          poster={currentJob.assets?.find(a => a.kind === 'IMAGE')?.url}
                         >
                           Your browser does not support the video tag.
                         </video>
                         <div className="flex space-x-2 mt-3">
                           <a
-                            href={currentJob.resultUrl}
+                            href={`${currentJob.resultUrl}?download=1`}
                             download
                             className="flex-1 bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 text-center transition-colors"
                           >
@@ -482,28 +619,76 @@ export default function Home() {
                     {/* Assets */}
                     {currentJob.assets && currentJob.assets.length > 0 && (
                       <div>
-                        <h4 className="font-medium text-gray-900 mb-2">Assets</h4>
-                        <div className="space-y-2">
+                        <h4 className="font-medium text-gray-900 mb-2">Generated Assets</h4>
+                        <div className="space-y-4">
                           {currentJob.assets.map((asset) => (
-                            <div key={asset.id} className="flex items-center justify-between bg-gray-50 rounded-md p-2">
-                              <div className="flex items-center space-x-2">
-                                <span className="text-sm text-gray-700">
-                                  {asset.kind.toLowerCase()} - {asset.meta?.sceneId || 'unknown'}
+                            <div key={asset.id} className="bg-gray-50 rounded-md p-4">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="text-sm font-medium text-gray-700">
+                                  {asset.kind.toLowerCase()} - Scene {asset.meta?.sceneIndex !== undefined ? asset.meta.sceneIndex + 1 : 'unknown'}
                                 </span>
                                 {asset.kind === 'VIDEO' && (
                                   <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
                                     AI Generated
                                   </span>
                                 )}
-        </div>
-        <a
-                                href={asset.url}
-          target="_blank"
-          rel="noopener noreferrer"
-                                className="text-blue-600 hover:text-blue-800 text-sm"
-                              >
-                                {asset.kind === 'VIDEO' ? 'Play' : 'View'}
-                              </a>
+                              </div>
+                              
+                              {asset.kind === 'IMAGE' && (
+                                <div className="space-y-2">
+                                  <img
+                                    src={asset.url}
+                                    alt={`Scene ${asset.meta?.sceneIndex !== undefined ? asset.meta.sceneIndex + 1 : 'unknown'} image`}
+                                    className="w-full max-w-md rounded-md border border-gray-200"
+                                    onError={(e) => {
+                                      console.error('Image failed to load:', asset.url);
+                                      e.currentTarget.style.display = 'none';
+                                    }}
+                                  />
+                                  <a
+                                    href={asset.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-block text-blue-600 hover:text-blue-800 text-sm"
+                                  >
+                                    View Full Size
+                                  </a>
+                                </div>
+                              )}
+                              
+                              {asset.kind === 'AUDIO' && (
+                                <div className="space-y-2">
+                                  <audio controls className="w-full">
+                                    <source src={asset.url} type="audio/mpeg" />
+                                    Your browser does not support the audio element.
+                                  </audio>
+                                  <a
+                                    href={asset.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-block text-blue-600 hover:text-blue-800 text-sm"
+                                  >
+                                    Download Audio
+                                  </a>
+                                </div>
+                              )}
+                              
+                              {asset.kind === 'VIDEO' && (
+                                <div className="space-y-2">
+                                  <video controls className="w-full max-w-md rounded-md">
+                                    <source src={asset.url} type="video/mp4" />
+                                    Your browser does not support the video element.
+                                  </video>
+                                  <a
+                                    href={asset.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-block text-blue-600 hover:text-blue-800 text-sm"
+                                  >
+                                    Download Video
+                                  </a>
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -513,16 +698,75 @@ export default function Home() {
                 )}
 
                 {currentJob.status === 'FAILED' && (
-                  <div className="bg-red-50 border border-red-200 rounded-md p-3">
-                    <p className="text-red-600 text-sm">
-                      Job failed. Please try again with a different prompt.
+                  <div className="bg-red-50 border border-red-200 rounded-md p-4">
+                    <h3 className="font-medium text-red-900 mb-2">Job Failed</h3>
+                    <p className="text-red-700 text-sm mb-3">
+                      The job failed during processing. Check the terminal logs for detailed error information.
                     </p>
-                    <button
-                      onClick={resetForm}
-                      className="mt-2 bg-red-600 text-white py-1 px-3 rounded text-sm hover:bg-red-700 transition-colors"
-                    >
-                      Try Again
-                    </button>
+                    
+                    {/* Show which step failed */}
+                    {currentJob.steps && (
+                      <div className="mb-3">
+                        <p className="text-sm font-medium text-red-800 mb-1">Failed Step:</p>
+                        {currentJob.steps
+                          .filter(step => step.status === 'FAILED')
+                          .map(step => (
+                            <div key={step.id} className="text-sm text-red-700">
+                              <span className="font-medium">{step.type}:</span> {step.error || 'Unknown error'}
+                            </div>
+                          ))}
+                      </div>
+                    )}
+                    
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={async () => {
+                          if (!currentJob) return
+                          setIsGenerating(true)
+                          setError('')
+                          
+                          try {
+                            // Retry the failed step by calling the processor again
+                            const response = await fetch(`/api/jobs/${currentJob.id}/retry`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' }
+                            })
+                            
+                            if (!response.ok) {
+                              const errorData = await response.json()
+                              throw new Error(errorData.error || 'Failed to retry job')
+                            }
+                            
+                            // Refresh job status
+                            await fetchJobStatus(currentJob.id)
+                          } catch (err) {
+                            console.error('Retry failed:', err)
+                            setError(err instanceof Error ? err.message : 'Failed to retry job')
+                          } finally {
+                            setIsGenerating(false)
+                          }
+                        }}
+                        disabled={isGenerating}
+                        className="bg-blue-600 text-white py-2 px-4 rounded text-sm hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                      >
+                        {isGenerating ? 'Retrying...' : 'Retry Failed Step'}
+                      </button>
+                      <button
+                        onClick={resetForm}
+                        className="bg-red-600 text-white py-2 px-4 rounded text-sm hover:bg-red-700 transition-colors"
+                      >
+                        Try Again
+                      </button>
+                      <button
+                        onClick={() => {
+                          setCurrentJob(null)
+                          setError('')
+                        }}
+                        className="bg-gray-600 text-white py-2 px-4 rounded text-sm hover:bg-gray-700 transition-colors"
+                      >
+                        Start Over
+                      </button>
+                    </div>
                   </div>
                 )}
 

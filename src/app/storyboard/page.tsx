@@ -38,6 +38,8 @@ export default function StoryboardPage() {
   const duration = parseInt(searchParams.get('duration') || '150')
   const languages = searchParams.get('languages')?.split(',') || ['en']
   const voiceId = searchParams.get('voiceId') || ''
+  const ttsProvider = searchParams.get('ttsProvider') as 'heygen' | 'openai' || 'heygen'
+  const openaiVoice = searchParams.get('openaiVoice') || 'alloy'
 
   useEffect(() => {
     if (prompt) {
@@ -47,9 +49,12 @@ export default function StoryboardPage() {
 
   useEffect(() => {
     if (script && script.languages && languages.length > 0) {
-      setSelectedLanguage(languages[0])
+      // Only set the selected language if it's not already set or if the current selection is not valid
+      if (!selectedLanguage || !languages.includes(selectedLanguage)) {
+        setSelectedLanguage(languages[0])
+      }
     }
-  }, [script, languages])
+  }, [script, languages, selectedLanguage])
 
   const generateScript = async () => {
     setIsLoading(true)
@@ -166,6 +171,8 @@ export default function StoryboardPage() {
           duration,
           languages,
           voiceId: voiceId || undefined,
+          ttsProvider,
+          openaiVoice,
           script: editedScript, // Pass the edited script
         }),
       })
@@ -179,11 +186,18 @@ export default function StoryboardPage() {
       const jobData = await response.json()
       console.log('Job created successfully:', jobData)
       
-      // For demo mode, redirect to demo page with job ID instead of main page
-      const isDemo = searchParams.get('demo') === 'true' || window.location.pathname.includes('/demo')
+      // Add a small delay to ensure job is fully created in memory storage
+      await new Promise(resolve => setTimeout(resolve, 500))
+      
+      // Redirect based on where the user came from
+      const isDemo = searchParams.get('demo') === 'true'
+      console.log('Job created successfully, redirecting:', { isDemo, jobId: jobData.id })
+      
       if (isDemo) {
+        // If came from demo page, go back to demo page
         router.push(`/demo?jobId=${jobData.id}`)
       } else {
+        // If came from main page, go back to main page with job ID
         router.push(`/?jobId=${jobData.id}`)
       }
     } catch (err) {
@@ -195,7 +209,13 @@ export default function StoryboardPage() {
   }
 
   const goBack = () => {
-    router.back()
+    // Navigate back to the main page, preserving any existing job ID
+    const jobId = searchParams.get('jobId')
+    if (jobId) {
+      router.push(`/?jobId=${jobId}`)
+    } else {
+      router.push('/')
+    }
   }
 
   if (isLoading) {
