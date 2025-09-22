@@ -8,15 +8,6 @@ export class VideoComposer {
 
   constructor() {
     this.tempDir = path.join(process.cwd(), 'temp')
-    
-    // Set FFmpeg path for macOS Homebrew installation
-    const ffmpegPath = process.env.FFMPEG_PATH || '/opt/homebrew/bin/ffmpeg'
-    try {
-      ffmpeg.setFfmpegPath(ffmpegPath)
-      console.log(`VideoComposer: Using FFmpeg at ${ffmpegPath}`)
-    } catch (error) {
-      console.warn(`VideoComposer: Could not set FFmpeg path to ${ffmpegPath}, using system PATH`)
-    }
   }
 
   private async ensureTempDir() {
@@ -94,68 +85,52 @@ export class VideoComposer {
           '-map', '[texted]',
           '-map', '1:a',
           '-c:v', 'libx264',
-          '-profile:v', 'baseline',
-          '-level', '3.0',
-          '-pix_fmt', 'yuv420p',
-          '-movflags', '+faststart',
-          '-preset', 'veryfast',
-          '-crf', '20',
-          '-tag:v', 'avc1',
           '-c:a', 'aac',
-          '-ac', '2',
-          '-b:a', '160k',
-          '-ar', '44100',
-          '-vsync', 'cfr',
-          '-g', '60',
-          '-bf', '0',
           '-t', duration.toString(),
           '-r', '30'
         ])
         .output(outputPath)
-        .on('end', () => {
-          console.log(`Scene clip created successfully: ${outputPath}`)
-          resolve()
-        })
-        .on('error', (err) => {
-          console.error(`FFmpeg error creating scene clip:`, err)
-          reject(err)
-        })
+        .on('end', () => resolve())
+        .on('error', (err) => reject(err))
         .run()
     })
   }
 
   private async concatenateClips(clipPaths: string[], outputPath: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      const filter = clipPaths.map((_, i) => `[${i}:v][${i}:a]`).join('') + `concat=n=${clipPaths.length}:v=1:a=1[outv][outa]`
-      const ff = ffmpeg()
-      // Add each clip as an input explicitly; using inputOptions for -i was incorrect
-      for (const p of clipPaths) {
-        ff.input(p)
-      }
-      ff
-        .complexFilter(filter)
+      // Use concat demuxer for better reliability
+      const concatFile = path.join(path.dirname(outputPath), 'concat.txt')
+      const concatContent = clipPaths.map(p => `file '${p}'`).join('\n')
+      
+      // Write concat file
+      fs.writeFileSync(concatFile, concatContent)
+      
+      ffmpeg()
+        .input(concatFile)
+        .inputOptions(['-f', 'concat', '-safe', '0'])
         .outputOptions([
-          '-map', '[outv]',
-          '-map', '[outa]',
-          '-c:v', 'libx264',
-          '-profile:v', 'baseline',
-          '-level', '3.0',
-          '-pix_fmt', 'yuv420p',
-          '-movflags', '+faststart',
-          '-preset', 'veryfast',
-          '-crf', '20',
-          '-tag:v', 'avc1',
-          '-c:a', 'aac',
-          '-ac', '2',
-          '-b:a', '160k',
-          '-ar', '44100',
-          '-vsync', 'cfr',
-          '-g', '60',
-          '-bf', '0'
+          '-c', 'copy', // Copy streams without re-encoding for speed
+          '-movflags', '+faststart'
         ])
         .output(outputPath)
-        .on('end', () => resolve())
-        .on('error', (err) => reject(err))
+        .on('end', () => {
+          // Clean up concat file
+          try {
+            fs.unlinkSync(concatFile)
+          } catch (e) {
+            // Ignore cleanup errors
+          }
+          resolve()
+        })
+        .on('error', (err) => {
+          // Clean up concat file
+          try {
+            fs.unlinkSync(concatFile)
+          } catch (e) {
+            // Ignore cleanup errors
+          }
+          reject(err)
+        })
         .run()
     })
   }

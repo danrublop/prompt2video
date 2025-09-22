@@ -268,15 +268,7 @@ class SimpleProcessor {
           console.log(`Video saved for ${langCode} to:`, videoUrl)
         } catch (ffmpegError) {
           console.error(`FFmpeg error details for ${langCode}:`, ffmpegError)
-          console.warn(`FFmpeg not available for ${langCode}, creating mock video:`, ffmpegError)
-          
-          // Create a mock video file for demo purposes
-          const mockVideoData = Buffer.from(`Mock video data for ${langCode} - FFmpeg not available`)
-          videoUrl = await memoryStorage.storeFile(jobId, 'video', `${langCode}_final_video.mp4`, mockVideoData)
-          console.log(`Mock video created for ${langCode}:`, videoUrl)
-          
-          // Mark composition as successful even with mock video
-          console.log(`Composition completed with mock video for ${langCode}`)
+          throw new Error(`Video composition failed for ${langCode}: ${ffmpegError instanceof Error ? ffmpegError.message : 'Unknown FFmpeg error'}`)
         }
         
         await memoryStorage.createAsset({
