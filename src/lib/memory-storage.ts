@@ -11,6 +11,14 @@ export interface Job {
   voiceId?: string
   ttsProvider?: 'heygen' | 'openai'
   openaiVoice?: string
+  generationMode?: 'images' | 'videos' | 'whiteboard' | 'scene_generator'
+  useAvatar?: boolean
+  avatarMode?: 'fullscreen' | 'corner' | 'alternating'
+  avatarId?: string
+  imageTheme?: string
+  imageStyle?: string
+  // optional sticker style for scene_generator whiteboard system
+  stickerStyle?: 'cute cartoon' | 'clip art'
   status: 'QUEUED' | 'RUNNING' | 'FAILED' | 'DONE'
   totalCost: number
   resultUrl?: string
@@ -210,6 +218,22 @@ class MemoryStorage {
     
     this.assets.set(id, asset)
     return asset
+  }
+
+  async updateAsset(assetId: string, updates: Partial<Asset>): Promise<Asset | null> {
+    const asset = this.assets.get(assetId)
+    if (!asset) {
+      return null
+    }
+    
+    const updatedAsset: Asset = {
+      ...asset,
+      ...updates,
+      updatedAt: new Date()
+    }
+    
+    this.assets.set(assetId, updatedAsset)
+    return updatedAsset
   }
 
   async getAssetsByJob(jobId: string): Promise<Asset[]> {

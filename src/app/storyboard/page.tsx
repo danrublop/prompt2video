@@ -38,8 +38,15 @@ export default function StoryboardPage() {
   const duration = parseInt(searchParams.get('duration') || '150')
   const languages = searchParams.get('languages')?.split(',') || ['en']
   const voiceId = searchParams.get('voiceId') || ''
-  const ttsProvider = searchParams.get('ttsProvider') as 'heygen' | 'openai' || 'heygen'
+  const ttsProvider = searchParams.get('ttsProvider') as 'heygen' | 'openai' | 'avatar' || 'heygen'
   const openaiVoice = searchParams.get('openaiVoice') || 'alloy'
+  const generationMode = searchParams.get('generationMode') as 'images' | 'videos' | 'whiteboard' || 'images'
+  const useAvatar = searchParams.get('useAvatar') === 'true'
+  const avatarMode = searchParams.get('avatarMode') || 'fullscreen'
+  const avatarId = searchParams.get('avatarId') || ''
+  const imageTheme = searchParams.get('imageTheme') || 'whiteboard'
+  const imageStyle = searchParams.get('imageStyle') || 'whiteboard_bw'
+  const stickerStyle = (searchParams.get('stickerStyle') as 'cute cartoon' | 'clip art') || 'cute cartoon'
 
   useEffect(() => {
     if (prompt) {
@@ -158,6 +165,28 @@ export default function StoryboardPage() {
 
     try {
       console.log('Creating job with script:', editedScript)
+      console.log('Generation mode being sent:', generationMode)
+      console.log('Avatar parameters:', {
+        useAvatar,
+        avatarMode,
+        avatarId,
+        ttsProvider
+      })
+      console.log('Full request body being sent:', {
+        prompt,
+        aspectRatio,
+        duration,
+        languages,
+        voiceId: voiceId || undefined,
+        ttsProvider,
+        openaiVoice,
+        generationMode,
+        imageTheme,
+        useAvatar,
+        avatarMode: useAvatar ? avatarMode : undefined,
+        avatarId: useAvatar ? avatarId : undefined,
+        script: editedScript
+      })
       
       // Create job with the edited script
       const response = await fetch('/api/jobs', {
@@ -173,6 +202,13 @@ export default function StoryboardPage() {
           voiceId: voiceId || undefined,
           ttsProvider,
           openaiVoice,
+          generationMode,
+          imageTheme,
+          imageStyle,
+          stickerStyle,
+          useAvatar,
+          avatarMode: useAvatar ? avatarMode : undefined,
+          avatarId: useAvatar ? avatarId : undefined,
           script: editedScript, // Pass the edited script
         }),
       })

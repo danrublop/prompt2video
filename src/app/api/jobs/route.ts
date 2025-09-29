@@ -18,7 +18,11 @@ export async function POST(request: NextRequest) {
       languages: body.languages,
       hasScript: !!body.script,
       aspectRatio: body.aspectRatio,
-      duration: body.duration
+      duration: body.duration,
+      generationMode: body.generationMode,
+      useAvatar: body.useAvatar,
+      avatarMode: body.avatarMode,
+      avatarId: body.avatarId
     })
 
     // Validate TTS provider prerequisites
@@ -42,7 +46,20 @@ export async function POST(request: NextRequest) {
       ttsProvider: body.ttsProvider,
       openaiVoice: body.openaiVoice,
       styleProfile: body.styleProfile,
+      generationMode: body.generationMode || 'images',
       script: body.script, // Pass through the script from storyboard
+      useAvatar: body.useAvatar,
+      avatarMode: body.avatarMode,
+      avatarId: body.avatarId,
+      imageTheme: body.imageTheme,
+      // @ts-ignore
+      imageStyle: body.imageStyle,
+      // pass through stickerStyle if provided
+      // it will be stored as part of job via memory storage
+      // and used when invoking the scene-generator whiteboard system
+      // (forwarded via env var)
+      // @ts-ignore
+      stickerStyle: body.stickerStyle,
     })
 
     console.log('Job created successfully:', {

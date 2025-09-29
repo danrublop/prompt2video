@@ -1,52 +1,24 @@
-export async function withRetry<T>(
+export async function retryOperation<T>(
   operation: () => Promise<T>,
-  maxAttempts: number = 3,
-  baseDelay: number = 1000
+  maxRetries: number = 3,
+  delayMs: number = 1000
 ): Promise<T> {
-  let lastError: Error
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+  let lastError: Error | null = null
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
+      console.log(`  - Attempt ${attempt}/${maxRetries}`)
       return await operation()
     } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error))
+      lastError = error instanceof Error ? error : new Error('Unknown error')
+      console.log(`  - Attempt ${attempt} failed:`, lastError.message)
       
-      if (attempt === maxAttempts) {
-        throw lastError
+      if (attempt < maxRetries) {
+        console.log(`  - Retrying in ${delayMs}ms...`)
+        await new Promise(resolve => setTimeout(resolve, delayMs))
       }
-
-      // Exponential backoff with jitter
-      const delay = baseDelay * Math.pow(2, attempt - 1) + Math.random() * 1000
-      console.log(`Attempt ${attempt} failed, retrying in ${Math.round(delay)}ms...`)
-      await new Promise(resolve => setTimeout(resolve, delay))
     }
   }
-
-  throw lastError!
+  
+  throw new Error(`Operation failed after ${maxRetries} attempts. Last error: ${lastError?.message}`)
 }
-
-export function isRetryableError(error: any): boolean {
-  if (!error) return false
-  
-  const message = error.message?.toLowerCase() || ''
-  const status = error.status || error.statusCode || 0
-  
-  // Network errors
-  if (message.includes('network') || message.includes('timeout') || message.includes('econnreset')) {
-    return true
-  }
-  
-  // HTTP status codes that are retryable
-  if (status >= 500 || status === 429 || status === 408) {
-    return true
-  }
-  
-  // Specific API errors
-  if (message.includes('rate limit') || message.includes('quota exceeded')) {
-    return true
-  }
-  
-  return false
-}
-
-

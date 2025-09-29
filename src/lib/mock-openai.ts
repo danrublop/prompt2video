@@ -1,10 +1,33 @@
 import { ScriptResponse, ScriptScene } from '@/types'
 
 // Mock implementation for testing without OpenAI API keys
+
+function generateThemeAwareDescription(concept: string, themeId: string, sceneType: string): string {
+  switch (themeId) {
+    case 'whiteboard':
+      return `Simple sketch illustration on clean white paper. Completed artwork already on the page with direct top-down perspective and flat 2D appearance. Content-specific header at the top showing "${concept}" - spelled correctly and based on the script. One central simple drawing showing the key concept. Abundant white space around the drawing for clean appearance. Black ink only, basic geometric shapes, minimal detail, educational sketch style.`
+    
+    case 'modern_infographic':
+      return `Professional modern infographic design with clean geometric shapes and modern typography. Main visual element showing "${concept}". Professional blue and white color scheme with accent colors. Grid-based layout with clear information hierarchy. Icon-based design with data visualization elements. High contrast, clean, professional presentation.`
+    
+    case 'sketchy_notes':
+      return `Hand-drawn sketchy notebook style illustration on notebook paper background. Main concept: "${concept}". Pencil and pen illustrations with doodle-style elements. Informal handwritten text style with personal note-taking aesthetic. Black ink on light paper with subtle paper texture. Organic, flowing layout with natural text placement.`
+    
+    case 'corporate_presentation':
+      return `Professional corporate presentation slide design with clean business layout. Main topic: "${concept}". Professional charts and graphs with corporate color scheme. Grid-based professional layout with clear data hierarchy. Corporate blue, white, and gray with accent colors. Formal typography with high-contrast design. Executive presentation style.`
+    
+    case 'educational_illustration':
+      return `Colorful educational illustration design with bright educational colors. Main concept: "${concept}". Friendly illustrations with learning-focused design. Clear visual hierarchy with engaging graphics. Bright, educational colors with high contrast. Child-friendly style with educational content focus. Engaging, colorful, and learning-oriented design.`
+    
+    default:
+      return `Professional ${themeId} style diagram showing ${concept} with clean, modern design and educational content appropriate for ${sceneType} scenes.`
+  }
+}
 export async function generateScript(
   prompt: string,
   targetDuration: number,
-  language: string = 'English'
+  language: string = 'English',
+  imageTheme: string = 'whiteboard'
 ): Promise<ScriptResponse> {
   // Simulate API delay
   await new Promise(resolve => setTimeout(resolve, 1000))
@@ -120,41 +143,123 @@ export async function generateScript(
   
   const content = getLanguageContent(language)
   
-  // Generate mock script based on prompt
-  const scenes: ScriptScene[] = [
+  // Calculate optimal number of scenes based on target duration
+  // Aim for 20-25 seconds per scene (including pauses)
+  const idealSceneDuration = 22 // 20 seconds content + 2 seconds pause
+  const numScenes = Math.max(3, Math.min(12, Math.round(targetDuration / idealSceneDuration)))
+  
+  const pauseDuration = 3 // 3 seconds between scenes
+  const totalPauseTime = (numScenes - 1) * pauseDuration
+  const availableContentTime = targetDuration - totalPauseTime
+  const avgSceneDuration = Math.floor(availableContentTime / numScenes)
+  
+  // Ensure scenes are between 15-30 seconds, but prioritize filling the target duration
+  const minSceneDuration = Math.max(15, Math.floor(avgSceneDuration * 0.8))
+  const maxSceneDuration = Math.min(30, Math.floor(avgSceneDuration * 1.2))
+
+  // Generate mock script based on prompt with proper timing and safe image descriptions
+  const sceneTemplates = [
     {
-      sceneId: "scene_1",
       goal: "Introduce the main concept",
       narration: content.welcome,
       caption: content.intro,
-      imageDescription: `A professional infographic showing ${prompt} concept with clean, modern design`,
-      duration: Math.min(20, targetDuration / 4)
+      imageDescription: generateThemeAwareDescription('main concept', imageTheme, 'introduction'),
+      durationVariation: 0
     },
     {
-      sceneId: "scene_2", 
       goal: "Explain the core principles",
       narration: content.principles,
       caption: content.core,
-      imageDescription: `A diagram illustrating the main principles of ${prompt} with clear visual hierarchy`,
-      duration: Math.min(25, targetDuration / 4)
+      imageDescription: generateThemeAwareDescription('key principles', imageTheme, 'explanation'),
+      durationVariation: 2
     },
     {
-      sceneId: "scene_3",
       goal: "Show practical applications",
       narration: content.applications,
       caption: content.apps,
-      imageDescription: `A showcase of real-world applications of ${prompt} with examples and case studies`,
-      duration: Math.min(30, targetDuration / 4)
+      imageDescription: generateThemeAwareDescription('practical applications', imageTheme, 'examples'),
+      durationVariation: 1
     },
     {
-      sceneId: "scene_4",
       goal: "Highlight key benefits",
       narration: content.benefits,
       caption: content.benefits_label,
-      imageDescription: `A benefits diagram showing the advantages of ${prompt} with icons and statistics`,
-      duration: Math.min(25, targetDuration / 4)
+      imageDescription: generateThemeAwareDescription('key benefits', imageTheme, 'benefits'),
+      durationVariation: -1
+    },
+    {
+      goal: "Provide examples and case studies",
+      narration: content.applications,
+      caption: content.apps,
+      imageDescription: `Professional case study infographic with real-world examples and clean design`,
+      durationVariation: 1
+    },
+    {
+      goal: "Summarize and conclude",
+      narration: content.benefits,
+      caption: content.benefits_label,
+      imageDescription: `Summary infographic highlighting key takeaways with professional design and educational content`,
+      durationVariation: -2
+    },
+    {
+      goal: "Explore advanced concepts",
+      narration: content.principles,
+      caption: content.core,
+      imageDescription: `Advanced educational diagram with detailed explanations and professional design`,
+      durationVariation: 0
+    },
+    {
+      goal: "Address common questions",
+      narration: content.welcome,
+      caption: content.intro,
+      imageDescription: `FAQ-style infographic with clear answers and professional presentation`,
+      durationVariation: 1
+    },
+    {
+      goal: "Show real-world impact",
+      narration: content.benefits,
+      caption: content.benefits_label,
+      imageDescription: `Impact visualization with statistics and professional design elements`,
+      durationVariation: -1
+    },
+    {
+      goal: "Provide next steps",
+      narration: content.applications,
+      caption: content.apps,
+      imageDescription: generateThemeAwareDescription('next steps', imageTheme, 'action'),
+      durationVariation: 0
+    },
+    {
+      goal: "Share expert insights",
+      narration: content.principles,
+      caption: content.core,
+      imageDescription: generateThemeAwareDescription('expert insights', imageTheme, 'insights'),
+      durationVariation: 2
+    },
+    {
+      goal: "Wrap up with key points",
+      narration: content.benefits,
+      caption: content.benefits_label,
+      imageDescription: generateThemeAwareDescription('key takeaways', imageTheme, 'summary'),
+      durationVariation: -1
     }
   ]
+
+  // Generate scenes dynamically based on calculated number
+  const scenes: ScriptScene[] = []
+  for (let i = 0; i < numScenes; i++) {
+    const template = sceneTemplates[i % sceneTemplates.length]
+    const duration = Math.max(minSceneDuration, Math.min(maxSceneDuration, avgSceneDuration + template.durationVariation))
+    
+    scenes.push({
+      sceneId: `scene_${i + 1}`,
+      goal: template.goal,
+      narration: template.narration,
+      caption: template.caption,
+      imageDescription: template.imageDescription,
+      duration
+    })
+  }
 
   return {
     title: content.title,

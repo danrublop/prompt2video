@@ -1,10 +1,13 @@
 // Simple job processor to replace Redis queue system
 import { memoryStorage, Job, Step, Asset } from './memory-storage'
-import { generateScript, generateImage, generateVideo, generateSpeech, calculateTokenCost } from './openai'
+import { generateScript, generateImage, generateVideo, generateSpeech, calculateTokenCost, generateContentSpecificImage } from './openai'
+import { VideoComposer } from './video-composer'
 import { generateScript as mockGenerateScript, generateImage as mockGenerateImage, generateVideo as mockGenerateVideo, calculateTokenCost as mockCalculateTokenCost } from './mock-openai'
 import { heygenClient } from './heygen'
 import { mockHeygenClient } from './mock-heygen'
-import { videoComposer } from './video-composer'
+import { generateVeo3VideoWithScript, mockGenerateVeo3VideoWithScript } from './gemini'
+import { whiteboardAnimator } from './whiteboard-animator'
+import { createSceneGenerator } from './scene-generator'
 
 export interface CreateJobRequest {
   prompt: string
@@ -15,7 +18,14 @@ export interface CreateJobRequest {
   ttsProvider?: 'heygen' | 'openai'
   openaiVoice?: string
   styleProfile?: string
+  imageTheme?: string // Theme ID for consistent image generation
+  imageStyle?: string
   script?: any // Pre-generated script from storyboard
+  generationMode?: 'images' | 'videos' | 'whiteboard' | 'scene_generator' // Choose between image generation (ChatGPT), video generation (Veo3), whiteboard animation, or scene generator
+  useAvatar?: boolean // Whether to use HeyGen avatar for audio
+  avatarMode?: 'fullscreen' | 'corner' | 'alternating' // Avatar composition mode
+  avatarId?: string // HeyGen avatar ID
+  stickerStyle?: string
 }
 
 export interface JobResponse {
@@ -30,6 +40,7 @@ export interface JobResponse {
   openaiVoice?: string
   totalCost: number
   resultUrls?: { [language: string]: string }
+  script?: any // Include the script in the response
   createdAt: string
   updatedAt: string
   steps: Step[]
@@ -51,8 +62,14 @@ class SimpleProcessor {
     console.log('Creating job with request:', {
       prompt: request.prompt,
       languages: request.languages,
-      hasScript: !!request.script
+      hasScript: !!request.script,
+      generationMode: request.generationMode,
+      useAvatar: request.useAvatar,
+      avatarMode: request.avatarMode,
+      avatarId: request.avatarId,
+      ttsProvider: request.ttsProvider
     })
+    console.log('Full request object:', JSON.stringify(request, null, 2))
 
     const job = await memoryStorage.createJob({
       prompt: request.prompt,
@@ -63,12 +80,27 @@ class SimpleProcessor {
       status: 'QUEUED',
       totalCost: 0,
       styleProfile: request.styleProfile || 'Modern medical infographic style, high contrast, minimal text, friendly but professional icons, clean typography, muted color palette with accent colors',
+      imageTheme: request.imageTheme || 'whiteboard', // Store the selected theme
+      imageStyle: request.imageStyle || 'whiteboard_bw',
+      // @ts-ignore store sticker style on job
+      stickerStyle: request.stickerStyle || 'cute cartoon',
       script: request.script, // Store the script with multi-language support
-      ttsProvider: request.ttsProvider || 'heygen',
-      openaiVoice: request.openaiVoice || 'alloy'
+      ttsProvider: request.ttsProvider || 'openai',
+      openaiVoice: request.openaiVoice || 'alloy',
+      generationMode: request.generationMode || 'images',
+      useAvatar: request.useAvatar === true,
+      avatarMode: request.avatarMode || 'fullscreen',
+      avatarId: request.avatarId
     })
 
     console.log('Job created successfully:', job.id)
+    console.log('Job details:', {
+      useAvatar: job.useAvatar,
+      avatarMode: job.avatarMode,
+      avatarId: job.avatarId,
+      ttsProvider: job.ttsProvider
+    })
+    console.log('Full job object:', JSON.stringify(job, null, 2))
 
     // Start processing immediately (no queue needed)
     this.processJob(job.id).catch(error => {
@@ -153,10 +185,10 @@ class SimpleProcessor {
         scriptCost = 0
       } else {
         // Generate new script for first language only
-        console.log(`Generating script for language: ${languages[0]}`)
+        console.log(`Generating script for language: ${languages[0]} with theme: ${job.imageTheme || 'whiteboard'}`)
         script = hasOpenAI
-          ? await generateScript(job.prompt, job.duration, languages[0])
-          : await mockGenerateScript(job.prompt, job.duration, languages[0])
+          ? await generateScript(job.prompt, job.duration, languages[0], job.imageTheme || 'whiteboard')
+          : await mockGenerateScript(job.prompt, job.duration, languages[0], job.imageTheme || 'whiteboard')
         console.log(`Generated new script with ${script.scenes.length} scenes`)
         
         // Calculate script cost
@@ -170,26 +202,192 @@ class SimpleProcessor {
       await memoryStorage.addUsage(scriptCost)
       await this.updateStepStatus(jobId, 'SCRIPT', 'DONE', undefined, script)
 
-      // Step 2: Generate Images (shared across all languages)
+      // Step 2: Generate Images or Videos (shared across all languages)
+      const generationMode = job.generationMode || 'images'
+      console.log(`[DEBUG] Job generation mode: ${generationMode}`)
+      console.log(`[DEBUG] Job object:`, JSON.stringify(job, null, 2))
       await this.updateStepStatus(jobId, 'IMAGES', 'RUNNING')
       const imageAssets = []
-      // Use the first language's scenes for image generation (images are shared)
+      // Use the first language's scenes for image/video generation (shared)
       const scenes = script.languages ? script.languages[languages[0]]?.scenes || script.scenes : script.scenes
-      console.log(`Generating images for ${scenes.length} scenes`)
+      console.log(`[DEBUG] Generating ${generationMode} for ${scenes.length} scenes`)
+      
+      // Calculate video dimensions for proper aspect ratio (replicate mapping locally)
+      const getVideoDimensions = (aspect: '16:9' | '9:16' | '1:1') => {
+        switch (aspect) {
+          case '16:9':
+            return { width: 1920, height: 1080 }
+          case '9:16':
+            return { width: 1080, height: 1920 }
+          case '1:1':
+            return { width: 1024, height: 1024 }
+          default:
+            return { width: 1920, height: 1080 }
+        }
+      }
+      const dimensions = getVideoDimensions(job.aspectRatio as '16:9' | '9:16' | '1:1')
+      console.log(`Video dimensions: ${dimensions.width}x${dimensions.height} (${job.aspectRatio})`)
       
       for (let i = 0; i < scenes.length; i++) {
         const scene = scenes[i]
-        console.log(`Generating image ${i + 1}/${scenes.length}: ${scene.imageDescription.substring(0, 50)}...`)
-        const imageBuffer = await (hasOpenAI ? generateImage(scene.imageDescription) : mockGenerateImage(scene.imageDescription))
-        const imageUrl = await memoryStorage.storeFile(jobId, 'image', `scene_${i}_image.jpg`, imageBuffer)
         
-        await memoryStorage.createAsset({
-          jobId,
-          kind: 'IMAGE',
-          url: imageUrl,
-          meta: { sceneId: scene.sceneId, sceneIndex: i }
-        })
-        imageAssets.push({ scene, imageBuffer, imageUrl })
+        if (generationMode === 'videos') {
+          // Generate Veo3 videos
+          console.log(`Generating Veo3 video ${i + 1}/${scenes.length}: ${scene.narration.substring(0, 50)}...`)
+          const hasGemini = !!process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'your_gemini_api_key_here'
+          console.log(`[DEBUG] Has Gemini API key: ${hasGemini}`)
+          console.log(`[DEBUG] GEMINI_API_KEY value: ${process.env.GEMINI_API_KEY ? 'SET' : 'NOT SET'}`)
+          console.log(`[DEBUG] GEMINI_API_KEY length: ${process.env.GEMINI_API_KEY?.length || 0}`)
+          const videoBuffer = await (hasGemini ? generateVeo3VideoWithScript(scene.narration, i, scenes.length, job.aspectRatio as '16:9' | '9:16' | '1:1') : mockGenerateVeo3VideoWithScript(scene.narration, i, scenes.length, job.aspectRatio as '16:9' | '9:16' | '1:1'))
+          const videoUrl = await memoryStorage.storeFile(jobId, 'video', `scene_${i}_video.mp4`, videoBuffer)
+          
+          await memoryStorage.createAsset({
+            jobId,
+            kind: 'VIDEO',
+            url: videoUrl,
+            meta: { sceneId: scene.sceneId, sceneIndex: i, type: 'veo3' }
+          })
+          imageAssets.push({ scene, videoBuffer, videoUrl, type: 'video' })
+        } else if (generationMode === 'whiteboard') {
+          // Generate whiteboard animations
+          console.log(`Generating whiteboard animation ${i + 1}/${scenes.length}: ${scene.narration.substring(0, 50)}...`)
+          const animationResult = await whiteboardAnimator.generateWhiteboardAnimation({
+            prompt: scene.narration,
+            aspectRatio: job.aspectRatio as '16:9' | '9:16' | '1:1',
+            duration: scene.duration || 20,
+            strokeStyle: '#000000',
+            lineWidth: 3,
+            animationSpeed: 30
+          })
+          
+          const videoUrl = await memoryStorage.storeFile(jobId, 'video', `scene_${i}_whiteboard.mp4`, animationResult.videoBuffer)
+          const imageUrl = await memoryStorage.storeFile(jobId, 'image', `scene_${i}_whiteboard.jpg`, animationResult.imageBuffer)
+          
+          await memoryStorage.createAsset({
+            jobId,
+            kind: 'VIDEO',
+            url: videoUrl,
+            meta: { sceneId: scene.sceneId, sceneIndex: i, type: 'whiteboard' }
+          })
+          
+          await memoryStorage.createAsset({
+            jobId,
+            kind: 'IMAGE',
+            url: imageUrl,
+            meta: { sceneId: scene.sceneId, sceneIndex: i, type: 'whiteboard' }
+          })
+          
+          imageAssets.push({ 
+            scene, 
+            videoBuffer: animationResult.videoBuffer, 
+            imageBuffer: animationResult.imageBuffer,
+            videoUrl, 
+            imageUrl,
+            type: 'whiteboard' 
+          })
+        } else if (generationMode === 'scene_generator') {
+          // Generate scene using AI storyboard + whiteboard with narration-first approach
+          console.log(`[SCENE_GENERATOR] Generating scene ${i + 1}/${scenes.length}: ${scene.narration.substring(0, 50)}...`)
+          
+          const openaiApiKey = process.env.OPENAI_API_KEY
+          if (!openaiApiKey) {
+            throw new Error('OpenAI API key required for scene generator')
+          }
+          
+          // Use the scene generator to create whiteboard videos with narration-first approach
+          const { createSceneGenerator } = await import('./scene-generator')
+          const sceneGenerator = createSceneGenerator(openaiApiKey, (job as any).stickerStyle, (job as any).imageStyle)
+          
+          console.log(`[SCENE_GENERATOR] Creating whiteboard animation for scene ${i + 1}: "${scene.narration}"`)
+          
+          // Generate the complete scene with narration-first approach
+          const sceneResult = await sceneGenerator.generateScenes({
+            narration: scene.narration,
+            aspectRatio: job.aspectRatio as '16:9' | '9:16' | '1:1',
+            duration: scene.duration || 20
+          })
+          
+          // Get the generated scene (should be only one)
+          const generatedScene = sceneResult.scenes[0]
+          if (!generatedScene) {
+            throw new Error(`Failed to generate scene ${i + 1}`)
+          }
+          
+          console.log(`[SCENE_GENERATOR] Generated whiteboard video for scene ${i + 1}, size: ${generatedScene.videoBuffer.length} bytes, duration: ${generatedScene.duration}s`)
+          
+          // Create a placeholder image buffer (we could extract a frame from the video if needed)
+          const imageBuffer = Buffer.alloc(0) // Placeholder for now
+          
+          const videoUrl = await memoryStorage.storeFile(jobId, 'video', `scene_${i}_generated.mp4`, generatedScene.videoBuffer)
+          const imageUrl = await memoryStorage.storeFile(jobId, 'image', `scene_${i}_generated.jpg`, imageBuffer)
+          
+          await memoryStorage.createAsset({
+            jobId,
+            kind: 'VIDEO',
+            url: videoUrl,
+            meta: { 
+              sceneId: scene.sceneId, 
+              sceneIndex: i, 
+              type: 'scene_generator'
+            }
+          })
+          
+          await memoryStorage.createAsset({
+            jobId,
+            kind: 'IMAGE',
+            url: imageUrl,
+            meta: { 
+              sceneId: scene.sceneId, 
+              sceneIndex: i, 
+              type: 'scene_generator'
+            }
+          })
+          
+          imageAssets.push({ 
+            scene, 
+            videoBuffer: generatedScene.videoBuffer,
+            audioBuffer: generatedScene.audioBuffer,
+            imageBuffer: imageBuffer,
+            videoUrl,
+            imageUrl,
+            type: 'scene_generator' 
+          })
+          
+          console.log(`[SCENE_GENERATOR] Completed scene ${i + 1}/${scenes.length}`)
+        } else {
+          // Generate images (existing logic)
+          console.log(`Generating image ${i + 1}/${scenes.length}: ${scene.imageDescription.substring(0, 50)}...`)
+          
+          // Build context for enhanced image generation
+          const context = {
+            originalPrompt: job.prompt,
+            videoTitle: script.title,
+            previousScenes: scenes.slice(0, i),
+            nextScenes: scenes.slice(i + 1)
+          }
+          
+          const imageBuffer = await (hasOpenAI ? 
+            generateContentSpecificImage(
+              scene.narration, 
+              scene.imageDescription, 
+              job.imageTheme || 'whiteboard', 
+              i, 
+              scenes.length, 
+              dimensions,
+              context
+            ) : 
+            mockGenerateImage(scene.imageDescription)
+          )
+          const imageUrl = await memoryStorage.storeFile(jobId, 'image', `scene_${i}_image.jpg`, imageBuffer)
+          
+          await memoryStorage.createAsset({
+            jobId,
+            kind: 'IMAGE',
+            url: imageUrl,
+            meta: { sceneId: scene.sceneId, sceneIndex: i }
+          })
+          imageAssets.push({ scene, imageBuffer, imageUrl, type: 'image' })
+        }
       }
       
       // Update cost with image generation
@@ -215,30 +413,141 @@ class SimpleProcessor {
           const scene = langScenes[i]
           let audioBuffer: Buffer
           
-          if (job.ttsProvider === 'openai') {
+          console.log(`[AUDIO] Processing scene ${i + 1}/${langScenes.length}, job.useAvatar: ${job.useAvatar}`)
+          
+          if (job.useAvatar) {
+            // Generate HeyGen avatar video (provides both audio and video)
+            console.log(`[AVATAR] Generating HeyGen avatar video ${i + 1}/${langScenes.length}: ${scene.narration.substring(0, 50)}...`)
+            console.log(`[AVATAR] Job useAvatar: ${job.useAvatar}, avatarMode: ${job.avatarMode}, avatarId: ${job.avatarId}`)
+            const hasHeygen = !!process.env.HEYGEN_API_KEY && process.env.HEYGEN_API_KEY !== 'your_heygen_api_key_here'
+            console.log(`[AVATAR] Has HeyGen API key: ${hasHeygen}`)
+            
+            if (!hasHeygen) {
+              throw new Error('Avatar mode selected but HEYGEN_API_KEY is not configured. Please set up your HeyGen API key to use avatar generation.')
+            }
+            
+            if (hasHeygen) {
+              const { heygenClient } = await import('./heygen')
+              const avatarId = job.avatarId || process.env.HEYGEN_AVATAR_ID || 'Lina_Dress_Sitting_Side_public'
+              const voiceId = job.voiceId || process.env.HEYGEN_VOICE_ID || ''
+              
+              console.log(`Using avatar: ${avatarId}, voice: ${voiceId}`)
+              
+              try {
+                // Generate avatar video
+                const videoBuffer = await heygenClient.generateAvatarVideoAndWait(
+                  scene.narration,
+                  avatarId,
+                  voiceId,
+                  300000 // 5 minutes timeout
+                )
+              
+              const videoUrl = await memoryStorage.storeFile(jobId, 'video', `${langCode}_scene_${i}_avatar.mp4`, videoBuffer)
+              
+              await memoryStorage.createAsset({
+                jobId,
+                kind: 'VIDEO',
+                url: videoUrl,
+                meta: { 
+                  sceneId: scene.sceneId, 
+                  sceneIndex: i, 
+                  language: langCode,
+                  type: 'avatar',
+                  avatarMode: job.avatarMode || 'fullscreen',
+                  avatarId,
+                  voiceId
+                }
+              })
+              
+              // Extract audio from avatar video
+              audioBuffer = await heygenClient.extractAudioFromMp4(videoBuffer)
+              const audioUrl = await memoryStorage.storeFile(jobId, 'audio', `${langCode}_scene_${i}_audio.mp3`, audioBuffer)
+              
+              await memoryStorage.createAsset({
+                jobId,
+                kind: 'AUDIO',
+                url: audioUrl,
+                meta: { sceneId: scene.sceneId, sceneIndex: i, language: langCode }
+              })
+              
+              audioAssets.push({ ...imageAssets[i], scene, audioBuffer, audioUrl, videoBuffer, videoUrl, type: 'avatar' })
+              } catch (error) {
+                console.error(`[AVATAR] Failed to generate avatar video for scene ${i}:`, error)
+                throw new Error(`Avatar video generation failed for scene ${i + 1}: ${error instanceof Error ? error.message : 'Unknown error'}`)
+              }
+            } else {
+              // Mock avatar video generation
+              console.log('[AVATAR] Using mock avatar video generation')
+              try {
+                const mockVideoBuffer = await this.generateMockAvatarVideo(scene.narration, dimensions)
+              const videoUrl = await memoryStorage.storeFile(jobId, 'video', `${langCode}_scene_${i}_avatar.mp4`, mockVideoBuffer)
+              
+              await memoryStorage.createAsset({
+                jobId,
+                kind: 'VIDEO',
+                url: videoUrl,
+                meta: { 
+                  sceneId: scene.sceneId, 
+                  sceneIndex: i, 
+                  language: langCode,
+                  type: 'avatar',
+                  avatarMode: job.avatarMode || 'fullscreen'
+                }
+              })
+              
+              // Mock audio
+              audioBuffer = Buffer.from(`Mock avatar audio for scene ${i}`)
+              const audioUrl = await memoryStorage.storeFile(jobId, 'audio', `${langCode}_scene_${i}_audio.mp3`, audioBuffer)
+              
+              await memoryStorage.createAsset({
+                jobId,
+                kind: 'AUDIO',
+                url: audioUrl,
+                meta: { sceneId: scene.sceneId, sceneIndex: i, language: langCode }
+              })
+              
+              audioAssets.push({ ...imageAssets[i], scene, audioBuffer, audioUrl, videoBuffer: mockVideoBuffer, videoUrl, type: 'avatar' })
+              } catch (error) {
+                console.error(`[AVATAR] Failed to generate mock avatar video for scene ${i}:`, error)
+                throw new Error(`Mock avatar video generation failed for scene ${i + 1}: ${error instanceof Error ? error.message : 'Unknown error'}`)
+              }
+            }
+          } else if (job.ttsProvider === 'openai') {
             // Use OpenAI TTS
             console.log(`Generating audio with OpenAI TTS (voice: ${job.openaiVoice || 'alloy'}) for scene ${i}`)
             audioBuffer = isDemoMode 
               ? Buffer.from(`Mock OpenAI TTS audio for scene ${i}`)
               : await generateSpeech(scene.narration, job.openaiVoice || 'alloy')
+              
+            const audioUrl = await memoryStorage.storeFile(jobId, 'audio', `${langCode}_scene_${i}_audio.mp3`, audioBuffer)
+            
+            await memoryStorage.createAsset({
+              jobId,
+              kind: 'AUDIO',
+              url: audioUrl,
+              meta: { sceneId: scene.sceneId, sceneIndex: i, language: langCode }
+            })
+            audioAssets.push({ ...imageAssets[i], scene, audioBuffer, audioUrl })
           } else {
             // Use HeyGen TTS (default)
-            console.log(`Generating audio with HeyGen TTS for scene ${i}`)
+            console.log(`[TTS] Generating audio with HeyGen TTS for scene ${i}`)
+            console.log(`[TTS] Job useAvatar: ${job.useAvatar}, ttsProvider: ${job.ttsProvider}`)
+            console.log(`[TTS] Why not using avatar? job.useAvatar is: ${job.useAvatar} (type: ${typeof job.useAvatar})`)
             audioBuffer = await (isDemoMode ? mockHeygenClient : heygenClient).generateAndWaitForCompletion(
               scene.narration,
               job.voiceId || process.env.HEYGEN_VOICE_ID || '1bd001e7e50f421d891986aad5158bc3'
             )
+            
+            const audioUrl = await memoryStorage.storeFile(jobId, 'audio', `${langCode}_scene_${i}_audio.mp3`, audioBuffer)
+            
+            await memoryStorage.createAsset({
+              jobId,
+              kind: 'AUDIO',
+              url: audioUrl,
+              meta: { sceneId: scene.sceneId, sceneIndex: i, language: langCode }
+            })
+            audioAssets.push({ ...imageAssets[i], scene, audioBuffer, audioUrl })
           }
-          
-          const audioUrl = await memoryStorage.storeFile(jobId, 'audio', `${langCode}_scene_${i}_audio.mp3`, audioBuffer)
-          
-          await memoryStorage.createAsset({
-            jobId,
-            kind: 'AUDIO',
-            url: audioUrl,
-            meta: { sceneId: scene.sceneId, sceneIndex: i, language: langCode }
-          })
-          audioAssets.push({ ...imageAssets[i], scene, audioBuffer, audioUrl })
         }
 
         // Step 4: Compose Video for this language
@@ -246,14 +555,41 @@ class SimpleProcessor {
         try {
           const compositionOptions = {
             aspectRatio: job.aspectRatio as '16:9' | '9:16' | '1:1',
-            scenes: audioAssets.map((asset, i) => ({
-              sceneId: asset.scene.sceneId,
-              imageBuffer: asset.imageBuffer,
-              videoBuffer: null,
-              audioBuffer: asset.audioBuffer,
-              caption: asset.scene.caption,
-              duration: asset.scene.duration,
-            })),
+            scenes: (audioAssets as any[]).map((asset) => {
+              if (generationMode === 'videos' && asset.type === 'video') {
+                // Veo3 video scene
+                return {
+                  kind: 'VEO3_VIDEO' as const,
+                  sceneId: asset.scene.sceneId,
+                  videoBuffer: (asset as any).videoBuffer,
+                  audioBuffer: (asset as any).audioBuffer,
+                  caption: asset.scene.caption,
+                  duration: asset.scene.duration,
+                }
+              } else if (generationMode === 'scene_generator' && asset.type === 'scene_generator') {
+                // Scene generator video scene
+                return {
+                  kind: 'WHITEBOARD_ANIMATION' as const,
+                  sceneId: asset.scene.sceneId,
+                  videoBuffer: (asset as any).videoBuffer,
+                  audioBuffer: (asset as any).audioBuffer,
+                  caption: asset.scene.caption,
+                  duration: asset.scene.duration,
+                  imageBuffer: (asset as any).imageBuffer || Buffer.alloc(0), // Placeholder
+                }
+              } else {
+                // Whiteboard image scene
+                return {
+                  kind: 'WHITEBOARD' as const,
+                  sceneId: asset.scene.sceneId,
+                  imageBuffer: (asset as any).imageBuffer,
+                  videoBuffer: null,
+                  audioBuffer: (asset as any).audioBuffer,
+                  caption: asset.scene.caption,
+                  duration: asset.scene.duration,
+                }
+              }
+            }),
           }
 
           console.log(`Starting video composition for ${langCode} with FFmpeg...`)
@@ -262,7 +598,7 @@ class SimpleProcessor {
             sceneCount: compositionOptions.scenes.length
           })
           
-          const finalVideoBuffer = await videoComposer.composeVideo(compositionOptions)
+          const finalVideoBuffer = await new VideoComposer().composeVideo(compositionOptions, [langCode])
           console.log(`Video composition completed for ${langCode}, buffer size:`, finalVideoBuffer.length)
           videoUrl = await memoryStorage.storeFile(jobId, 'video', `${langCode}_final_video.mp4`, finalVideoBuffer)
           console.log(`Video saved for ${langCode} to:`, videoUrl)
@@ -421,6 +757,7 @@ class SimpleProcessor {
       openaiVoice: job.openaiVoice,
       totalCost: job.totalCost,
       resultUrls,
+      script: job.script, // Include the script in the response
       createdAt: job.createdAt.toISOString(),
       updatedAt: job.updatedAt.toISOString(),
       steps: job.steps,
@@ -449,6 +786,41 @@ class SimpleProcessor {
     }
   }
 
+  // Mock avatar video generation for testing
+  private async generateMockAvatarVideo(text: string, dimensions: { width: number; height: number }): Promise<Buffer> {
+    // Import as any to avoid TS type dependency for dev builds
+    const ffmpegMod: any = await import('fluent-ffmpeg')
+    const fs = await import('fs/promises')
+    const path = await import('path')
+    
+    // Create a simple mock video with text overlay
+    const tempDir = path.join(process.cwd(), 'temp', 'mock-avatar')
+    await fs.mkdir(tempDir, { recursive: true })
+    
+    const outputPath = path.join(tempDir, `mock_avatar_${Date.now()}.mp4`)
+    
+    // Create a simple colored background video with text
+    await new Promise<void>((resolve, reject) => {
+      (ffmpegMod as any)()
+        .input(`color=c=blue:size=${dimensions.width}x${dimensions.height}:duration=5`)
+        .inputFormat('lavfi')
+        .videoCodec('libx264')
+        .outputOptions([
+          '-pix_fmt yuv420p',
+          '-r 30'
+        ])
+        .output(outputPath)
+        .on('end', () => resolve())
+        .on('error', (err: any) => reject(err))
+        .run()
+    })
+    
+    const videoBuffer = await fs.readFile(outputPath)
+    await fs.unlink(outputPath).catch(() => {}) // Clean up
+    
+    return videoBuffer
+  }
+
   // Health check
   async healthCheck(): Promise<{ status: string; processing: number }> {
     return {
@@ -459,3 +831,5 @@ class SimpleProcessor {
 }
 
 export const simpleProcessor = new SimpleProcessor()
+
+

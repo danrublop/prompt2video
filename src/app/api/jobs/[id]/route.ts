@@ -20,6 +20,14 @@ export async function GET(
     }
 
     console.log(`Job found: ${jobId}, status: ${job.status}`)
+    if (job.status === 'FAILED') {
+      const failedStep = job.steps?.find(s => s.status === 'FAILED')
+      return NextResponse.json({
+        ...job,
+        failedStep: failedStep?.type,
+        failedError: failedStep?.error
+      }, { status: 200 })
+    }
     return NextResponse.json(job)
 
   } catch (error) {

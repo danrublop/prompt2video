@@ -4,6 +4,11 @@ export interface CreateJobRequest {
   duration?: number // in seconds
   languages?: string[]
   voiceId?: string
+  imageTheme?: string // Theme ID for consistent image generation
+  generationMode?: 'images' | 'videos' | 'whiteboard' | 'scene_generator' | 'scene_generator' // Choose between image generation (ChatGPT), video generation (Veo3), whiteboard animation, or scene generator
+  useAvatar?: boolean // Whether to use HeyGen avatar for audio
+  avatarMode?: 'fullscreen' | 'corner' | 'alternating' // Avatar composition mode
+  avatarId?: string // HeyGen avatar ID
 }
 
 export interface JobResponse {
@@ -13,10 +18,16 @@ export interface JobResponse {
   duration: number
   languages: string[]
   voiceId?: string
+  imageTheme?: string
+  generationMode?: 'images' | 'videos' | 'whiteboard' | 'scene_generator'
+  useAvatar?: boolean
+  avatarMode?: 'fullscreen' | 'corner' | 'alternating'
+  avatarId?: string
   status: 'QUEUED' | 'RUNNING' | 'FAILED' | 'DONE'
   totalCost: number
   resultUrl?: string // For backward compatibility
   resultUrls?: { [language: string]: string }
+  script?: any // Include script in the response
   styleProfile: string
   createdAt: string
   updatedAt: string
@@ -62,12 +73,43 @@ export interface ScriptResponse {
 
 export interface VideoCompositionOptions {
   aspectRatio: '16:9' | '9:16' | '1:1'
-  scenes: Array<{
-    sceneId: string
-    imageBuffer: Buffer
-    videoBuffer?: Buffer
-    audioBuffer: Buffer
-    caption: string
-    duration: number
-  }>
+  scenes: Array<
+    |
+      {
+        kind: 'AVATAR'
+        sceneId: string
+        avatarVideoBuffer: Buffer
+        caption: string
+        duration: number
+      }
+    |
+      {
+        kind: 'WHITEBOARD'
+        sceneId: string
+        imageBuffer: Buffer
+        audioBuffer: Buffer
+        caption: string
+        duration: number
+        steps?: string[]
+      }
+    |
+      {
+        kind: 'VEO3_VIDEO'
+        sceneId: string
+        videoBuffer: Buffer
+        audioBuffer: Buffer
+        caption: string
+        duration: number
+      }
+    |
+      {
+        kind: 'WHITEBOARD_ANIMATION'
+        sceneId: string
+        videoBuffer: Buffer
+        audioBuffer: Buffer
+        caption: string
+        duration: number
+        imageBuffer: Buffer
+      }
+  >
 }

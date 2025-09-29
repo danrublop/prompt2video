@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { generateScript, generateImage, generateVideo, calculateTokenCost } from '@/lib/openai'
+import { generateScript, generateContentSpecificImage, calculateTokenCost, generateWhiteboardPlan } from '@/lib/openai'
 import { heygenClient } from '@/lib/heygen'
 import { videoComposer } from '@/lib/video-composer'
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { prompt, aspectRatio = '16:9', duration = 150, language = 'English', voiceId } = body
+    const { prompt, aspectRatio = '16:9', duration = 150, language = 'English', voiceId, avatarId, imageTheme = 'whiteboard' } = body
     
     if (!prompt || prompt.trim().length === 0) {
       return NextResponse.json(
@@ -22,58 +22,63 @@ export async function POST(request: NextRequest) {
     const script = await generateScript(prompt.trim(), duration, language)
     console.log(`Generated script with ${script.scenes.length} scenes`)
 
-    // Step 2: Generate Visual Content
-    console.log('Generating visual content...')
-    const visualAssets = []
+    // Step 2 & 3: Build alternating AVATAR and WHITEBOARD scenes
+    if (!avatarId && !process.env.HEYGEN_AVATAR_ID) {
+      return NextResponse.json({ error: 'avatarId is required (or set HEYGEN_AVATAR_ID)' }, { status: 422 })
+    }
+    const effectiveAvatarId = avatarId || process.env.HEYGEN_AVATAR_ID as string
+
+    console.log('Generating alternating AVATAR and WHITEBOARD scenes...')
+    const composedScenes: any[] = []
     for (let i = 0; i < script.scenes.length; i++) {
       const scene = script.scenes[i]
-      console.log(`Generating content for scene ${i + 1}/${script.scenes.length}`)
-      
-      const [imageBuffer, videoBuffer] = await Promise.all([
-        generateImage(scene.imageDescription),
-        generateVideo(scene.imageDescription, undefined, Math.min(scene.duration, 10))
-      ])
+      const isAvatar = i % 2 === 0
 
-      visualAssets.push({
-        ...scene,
-        imageBuffer,
-        videoBuffer
-      })
-    }
-
-    // Step 3: Generate Audio
-    console.log('Generating audio...')
-    const audioAssets = []
-    for (let i = 0; i < visualAssets.length; i++) {
-      const scene = visualAssets[i]
-      console.log(`Generating audio for scene ${i + 1}/${visualAssets.length}`)
-      
-      const audioBuffer = await heygenClient.generateAndWaitForCompletion(
-        scene.narration,
-        voiceId || '1bd001e7e50f421d891986aad5158bc3'
-      )
-      
-      audioAssets.push({
-        ...scene,
-        audioBuffer
-      })
+      if (isAvatar) {
+        console.log(`Generating AVATAR video for scene ${i + 1}/${script.scenes.length}`)
+        const { video_id } = await heygenClient.generateAvatarVideo(scene.narration, {
+          avatarId: effectiveAvatarId,
+          voiceId: voiceId || process.env.HEYGEN_VOICE_ID,
+        })
+        const avatarVideoBuffer = await heygenClient.waitForVideoMp4(video_id)
+        composedScenes.push({
+          kind: 'AVATAR',
+          sceneId: scene.sceneId,
+          avatarVideoBuffer,
+          caption: scene.caption,
+          duration: scene.duration
+        })
+      } else {
+        console.log(`Generating WHITEBOARD assets for scene ${i + 1}/${script.scenes.length}`)
+        const imageBuffer = await generateContentSpecificImage(scene.narration, scene.imageDescription, imageTheme, i, script.scenes.length)
+        const steps = await generateWhiteboardPlan(scene.narration, scene.imageDescription)
+        // Reuse the avatar's narration audio to keep voice continuous across avatar + whiteboard
+        const { video_id: tmpId } = await heygenClient.generateAvatarVideo(scene.narration, {
+          avatarId: effectiveAvatarId,
+          voiceId: voiceId || process.env.HEYGEN_VOICE_ID,
+        })
+        const tmpVideo = await heygenClient.waitForVideoMp4(tmpId)
+        const audioBuffer = await heygenClient.extractAudioFromMp4(tmpVideo)
+        composedScenes.push({
+          kind: 'WHITEBOARD',
+          sceneId: scene.sceneId,
+          imageBuffer,
+          audioBuffer,
+          caption: scene.caption,
+          duration: scene.duration,
+          steps
+        })
+      }
     }
 
     // Step 4: Compose Final Video
     console.log('Composing final video...')
     const compositionOptions = {
       aspectRatio: aspectRatio as '16:9' | '9:16' | '1:1',
-      scenes: audioAssets.map(scene => ({
-        sceneId: scene.sceneId,
-        imageBuffer: scene.imageBuffer,
-        videoBuffer: scene.videoBuffer,
-        audioBuffer: scene.audioBuffer,
-        caption: scene.caption,
-        duration: scene.duration,
-      })),
+      scenes: composedScenes
     }
 
-    const finalVideoBuffer = await videoComposer.composeVideo(compositionOptions)
+    const finalVideoBuffer = await videoComposer.composeVideo(compositionOptions, ['en'])
     
     // Convert to base64 for response
     const videoBase64 = finalVideoBuffer.toString('base64')

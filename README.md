@@ -9,6 +9,11 @@ A Next.js application that generates videos from text descriptions using OpenAI 
 ### Step 1: Prompt Input
 - **Enter your video concept** - Describe what you want to create (e.g., "Create a 2-3 minute video on Anaphylaxis adverse events following vaccination in Africa")
 - **Set parameters** - Choose aspect ratio (16:9, 9:16, 1:1), duration, and optional voice ID
+- **Select generation mode** - Choose from:
+  - **Images** - Static DALL-E generated images for each scene
+  - **Videos** - AI-generated videos using Veo3 (requires Gemini API key)
+  - **Whiteboard** - Animated whiteboard drawings using Canvas API
+  - **Scene Generator** - AI storyboard + whiteboard animations (NEW!)
 - **Select languages** - Choose from 100+ supported languages, select multiple for multi-language video generation
 - **Submit for storyboard generation**
 
@@ -47,7 +52,15 @@ Once you confirm the storyboard, the system generates all assets:
 - **Synchronized timing** with scene durations
 - **Parallel processing** - Generates audio for all languages simultaneously
 
-#### 4c. Video Composition
+#### 4c. Scene Generator (NEW!)
+When using the **Scene Generator** mode, the system:
+- **AI Storyboarding** - Uses OpenAI to create detailed storyboards for each scene
+- **Whiteboard Animations** - Generates animated whiteboard videos using DALL-E stickers
+- **Individual Scene Processing** - Each scene gets its own whiteboard animation
+- **Real-time Drawing** - Creates smooth drawing animations with educational content
+- **Automatic Compilation** - Combines all scene videos into a cohesive final video
+
+#### 4d. Video Composition
 - **FFmpeg** combines images and audio into final MP4 for each language
 - **Ken Burns effect** on images for visual interest
 - **Text overlays** with scene captions in the appropriate language
@@ -197,6 +210,26 @@ HEYGEN_API_KEY=your_heygen_api_key_here
 # Optional
 TEMP_DIR=./temp
 ```
+
+### Whiteboard System Setup
+The Scene Generator feature uses an integrated Python-based whiteboard system:
+
+1. **Navigate to the whiteboard system**:
+   ```bash
+   cd whiteboard-system
+   ```
+
+2. **Install Python dependencies**:
+   ```bash
+   ./setup.sh
+   ```
+
+3. **Verify setup**:
+   ```bash
+   python3 main.py "Test narration"
+   ```
+
+The whiteboard system is automatically integrated and requires no additional configuration beyond the main environment variables.
 
 ### FFmpeg Setup
 See [FFMPEG_SETUP.md](./FFMPEG_SETUP.md) for detailed installation instructions.

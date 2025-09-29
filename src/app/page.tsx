@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { JobResponse, CreateJobRequest } from '@/types'
 import { SUPPORTED_LANGUAGES, LANGUAGE_REGIONS, getLanguagesByRegion, getPopularLanguages } from '@/lib/languages'
+import { ImageTheme } from '@/lib/themes'
 
 export default function Home() {
   const searchParams = useSearchParams()
@@ -13,8 +14,19 @@ export default function Home() {
   const [selectedLanguages, setSelectedLanguages] = useState<string[]>(['en'])
   const [showAllLanguages, setShowAllLanguages] = useState(false)
   const [voiceId, setVoiceId] = useState('')
-  const [ttsProvider, setTtsProvider] = useState<'heygen' | 'openai'>('heygen')
+  const [ttsProvider, setTtsProvider] = useState<'heygen' | 'openai'>('openai')
   const [openaiVoice, setOpenaiVoice] = useState('alloy')
+  const [generationMode, setGenerationMode] = useState<'images' | 'videos' | 'whiteboard' | 'scene_generator'>('images')
+  const [selectedTheme, setSelectedTheme] = useState<string>('whiteboard')
+  const [imageStyle, setImageStyle] = useState<string>('whiteboard_bw')
+  const [stickerStyle, setStickerStyle] = useState<string>('cute cartoon')
+  const [availableThemes, setAvailableThemes] = useState<ImageTheme[]>([])
+  const [useAvatar, setUseAvatar] = useState(false)
+  const [avatarMode, setAvatarMode] = useState<'fullscreen' | 'corner' | 'alternating'>('fullscreen')
+  const [availableAvatars, setAvailableAvatars] = useState<any[]>([])
+  const [availableVoices, setAvailableVoices] = useState<any[]>([])
+  const [selectedAvatarId, setSelectedAvatarId] = useState('')
+  const [selectedVoiceId, setSelectedVoiceId] = useState('')
   const [currentJob, setCurrentJob] = useState<JobResponse | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
   const [isLoadingJob, setIsLoadingJob] = useState(false)
@@ -34,6 +46,49 @@ export default function Home() {
     }
   }
 
+  const fetchThemes = async () => {
+    try {
+      const response = await fetch('/api/themes')
+      if (response.ok) {
+        const data = await response.json()
+        setAvailableThemes(data.themes || [])
+      }
+    } catch (error) {
+      console.error('Failed to fetch themes:', error)
+    }
+  }
+
+  const fetchHeyGenOptions = async () => {
+    try {
+      const [avatarsResponse, voicesResponse] = await Promise.all([
+        fetch('/api/heygen/avatars'),
+        fetch('/api/heygen/voices')
+      ])
+      
+      if (avatarsResponse.ok) {
+        const avatarsData = await avatarsResponse.json()
+        setAvailableAvatars(avatarsData.avatars || [])
+        
+        // Auto-select first avatar if available
+        if (avatarsData.avatars && avatarsData.avatars.length > 0) {
+          setSelectedAvatarId(avatarsData.avatars[0].avatar_id)
+        }
+      }
+      
+      if (voicesResponse.ok) {
+        const voicesData = await voicesResponse.json()
+        setAvailableVoices(voicesData.voices || [])
+        
+        // Auto-select first voice if available
+        if (voicesData.voices && voicesData.voices.length > 0) {
+          setSelectedVoiceId(voicesData.voices[0].voice_id)
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch HeyGen options:', error)
+    }
+  }
+
   // Check for job ID in URL parameters
   useEffect(() => {
     const jobId = searchParams.get('jobId')
@@ -46,9 +101,11 @@ export default function Home() {
     }
   }, [searchParams])
 
-  // Initial usage fetch on mount
+  // Initial usage and themes fetch on mount
   useEffect(() => {
     fetchUsage()
+    fetchThemes()
+    fetchHeyGenOptions()
   }, [])
 
   const createJob = async () => {
@@ -57,15 +114,30 @@ export default function Home() {
       return
     }
 
+    console.log('Creating job with parameters:', {
+      useAvatar,
+      avatarMode,
+      selectedAvatarId,
+      selectedVoiceId,
+      ttsProvider: useAvatar ? 'avatar' : ttsProvider
+    })
+
     // Redirect to storyboard page instead of creating job directly
     const params = new URLSearchParams({
       prompt: prompt.trim(),
       aspectRatio,
       duration: duration.toString(),
       languages: selectedLanguages.join(','),
-      voiceId: voiceId.trim() || '',
-      ttsProvider,
+      voiceId: useAvatar ? selectedVoiceId : voiceId.trim() || '',
+      ttsProvider: useAvatar ? 'avatar' : ttsProvider,
       openaiVoice,
+      generationMode,
+      imageTheme: selectedTheme,
+      imageStyle,
+      stickerStyle,
+      useAvatar: useAvatar.toString(),
+      avatarMode: useAvatar ? avatarMode : '',
+      avatarId: useAvatar ? selectedAvatarId : '',
     })
 
     window.location.href = `/storyboard?${params.toString()}`
@@ -373,37 +445,69 @@ export default function Home() {
                 </div>
               </div>
 
+              {/* Avatar Option */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Text-to-Speech Provider
+                  Avatar (HeyGen)
                 </label>
                 <div className="space-y-3">
-                  <div className="flex space-x-4">
-                    <label className="flex items-center">
-                      <input
-                        type="radio"
-                        value="heygen"
-                        checked={ttsProvider === 'heygen'}
-                        onChange={(e) => setTtsProvider(e.target.value as 'heygen' | 'openai')}
-                        disabled={isGenerating}
-                        className="mr-2"
-                      />
-                      <span className="text-gray-700">HeyGen (Premium voices)</span>
-                    </label>
-                    <label className="flex items-center">
-                      <input
-                        type="radio"
-                        value="openai"
-                        checked={ttsProvider === 'openai'}
-                        onChange={(e) => setTtsProvider(e.target.value as 'heygen' | 'openai')}
-                        disabled={isGenerating}
-                        className="mr-2"
-                      />
-                      <span className="text-gray-700">OpenAI (Built-in voices)</span>
-                    </label>
+                  <div className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={useAvatar}
+                      onChange={(e) => setUseAvatar(e.target.checked)}
+                      disabled={isGenerating}
+                      className="mr-2"
+                    />
+                    <span className="text-gray-700">Use HeyGen Avatar for audio</span>
                   </div>
                   
-                  {ttsProvider === 'heygen' && (
+                  {useAvatar && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
+                      <div className="text-sm text-blue-800">
+                        <strong>Note:</strong> When using avatar, it will provide both audio and visual content. You can still choose to combine it with DALL-E images or Veo3 videos for enhanced visuals.
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* TTS Provider - Only show when avatar is not selected */}
+              {!useAvatar && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Text-to-Speech Provider
+                  </label>
+                  <div className="space-y-3">
+                    <div className="flex space-x-4">
+                      <label className="flex items-center">
+                        <input
+                          type="radio"
+                          value="openai"
+                          checked={ttsProvider === 'openai'}
+                          onChange={(e) => setTtsProvider(e.target.value as 'heygen' | 'openai')}
+                          disabled={isGenerating}
+                          className="mr-2"
+                        />
+                        <span className="text-gray-700">OpenAI (Built-in voices)</span>
+                      </label>
+                      <label className="flex items-center">
+                        <input
+                          type="radio"
+                          value="heygen"
+                          checked={ttsProvider === 'heygen'}
+                          onChange={(e) => setTtsProvider(e.target.value as 'heygen' | 'openai')}
+                          disabled={isGenerating}
+                          className="mr-2"
+                        />
+                        <span className="text-gray-700">HeyGen (Premium voices)</span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              )}
+                  
+              {!useAvatar && ttsProvider === 'heygen' && (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         HeyGen Voice ID (optional)
@@ -419,7 +523,7 @@ export default function Home() {
                     </div>
                   )}
                   
-                  {ttsProvider === 'openai' && (
+                  {!useAvatar && ttsProvider === 'openai' && (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         OpenAI Voice
@@ -439,8 +543,433 @@ export default function Home() {
                       </select>
                     </div>
                   )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Generation Mode
+                </label>
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 gap-3">
+                    <label className="flex items-center">
+                      <input
+                        type="radio"
+                        value="images"
+                        checked={generationMode === 'images'}
+                        onChange={(e) => setGenerationMode(e.target.value as 'images' | 'videos' | 'whiteboard' | 'scene_generator')}
+                        disabled={isGenerating}
+                        className="mr-2"
+                      />
+                      <span className="text-gray-700">Images (ChatGPT/DALL-E)</span>
+                    </label>
+                    <label className="flex items-center">
+                      <input
+                        type="radio"
+                        value="videos"
+                        checked={generationMode === 'videos'}
+                        onChange={(e) => setGenerationMode(e.target.value as 'images' | 'videos' | 'whiteboard' | 'scene_generator')}
+                        disabled={isGenerating}
+                        className="mr-2"
+                      />
+                      <span className="text-gray-700">Videos (Veo3)</span>
+                    </label>
+                    <label className="flex items-center">
+                      <input
+                        type="radio"
+                        value="whiteboard"
+                        checked={generationMode === 'whiteboard'}
+                        onChange={(e) => setGenerationMode(e.target.value as 'images' | 'videos' | 'whiteboard' | 'scene_generator')}
+                        disabled={isGenerating}
+                        className="mr-2"
+                      />
+                      <span className="text-gray-700">Whiteboard Animation (Canvas + DALL-E)</span>
+                    </label>
+                    <label className="flex items-center">
+                      <input
+                        type="radio"
+                        value="scene_generator"
+                        checked={generationMode === 'scene_generator'}
+                        onChange={(e) => setGenerationMode(e.target.value as 'images' | 'videos' | 'whiteboard' | 'scene_generator')}
+                        disabled={isGenerating}
+                        className="mr-2"
+                      />
+                      <span className="text-gray-700">Scene Generator (AI Storyboard + Whiteboard)</span>
+                    </label>
+                  </div>
+                  
+                  <div className="text-sm text-gray-600">
+                    {generationMode === 'images' 
+                      ? 'Generate static images with customizable themes for each scene'
+                      : generationMode === 'videos'
+                      ? 'Generate AI videos using Veo3 for each scene (requires Gemini API key)'
+                      : generationMode === 'whiteboard'
+                      ? 'Generate animated whiteboard drawings using Canvas API and DALL-E for each scene'
+                      : 'Generate AI storyboard scenes with whiteboard animations for each narration segment'
+                    }
+                  </div>
                 </div>
               </div>
+
+              {/* Theme/Style Selector - Images and Scene Generator modes */}
+              {(generationMode === 'images' || generationMode === 'scene_generator') && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {generationMode === 'images' ? 'Image Theme & Style' : 'Whiteboard Sticker Style'}
+                  </label>
+                  <div className="space-y-3">
+                    {generationMode === 'images' ? (
+                      <>
+                        <div className="grid grid-cols-1 gap-3">
+                          {availableThemes.map((theme) => (
+                            <div
+                              key={theme.id}
+                              className={`border rounded-lg p-4 cursor-pointer transition-colors ${
+                                selectedTheme === theme.id
+                                  ? 'border-blue-500 bg-blue-50'
+                                  : 'border-gray-200 hover:border-gray-300'
+                              }`}
+                              onClick={() => setSelectedTheme(theme.id)}
+                            >
+                              <div className="flex items-start justify-between">
+                                <div className="flex-1">
+                                  <h4 className="font-medium text-gray-900 mb-1">{theme.name}</h4>
+                                  <p className="text-sm text-gray-600 mb-2">{theme.description}</p>
+                                  <div className="space-y-1">
+                                    <div className="text-xs text-gray-500">
+                                      <strong>Base Prompt:</strong> {theme.basePrompt}
+                                    </div>
+                                    <div className="text-xs text-gray-500">
+                                      <strong>Style:</strong> {theme.styleElements.slice(0, 3).join(', ')}
+                                      {theme.styleElements.length > 3 && '...'}
+                                    </div>
+                                    <div className="text-xs text-gray-500">
+                                      <strong>Colors:</strong> {theme.colorScheme}
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="ml-4">
+                                  <input
+                                    type="radio"
+                                    checked={selectedTheme === theme.id}
+                                    onChange={() => setSelectedTheme(theme.id)}
+                                    disabled={isGenerating}
+                                    className="text-blue-600 focus:ring-blue-500"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        {selectedTheme && (
+                          <div className="bg-gray-50 rounded-md p-3">
+                            <div className="text-sm">
+                              <strong className="text-gray-700">Selected Theme Details:</strong>
+                              <div className="mt-2 space-y-1">
+                                {availableThemes
+                                  .find(theme => theme.id === selectedTheme)
+                                  ?.consistencyKeywords.slice(0, 5)
+                                  .map((keyword, index) => (
+                                    <span
+                                      key={index}
+                                      className="inline-block bg-white text-gray-600 px-2 py-1 rounded text-xs mr-1 mb-1"
+                                    >
+                                      {keyword}
+                                    </span>
+                                  ))}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Whiteboard image style variants */}
+                        {selectedTheme === 'whiteboard' && (
+                          <div className="bg-white rounded-md p-4 border border-gray-200">
+                            <div className="text-sm font-medium text-gray-700 mb-2">Whiteboard Image Style</div>
+                            <div className="grid grid-cols-1 gap-2 text-sm">
+                              <label className="flex items-center">
+                                <input
+                                  type="radio"
+                                  className="mr-2"
+                                  checked={imageStyle === 'whiteboard_bw'}
+                                  onChange={() => setImageStyle('whiteboard_bw')}
+                                  disabled={isGenerating}
+                                />
+                                <span>Hand-drawn black & white, whiteboard style</span>
+                              </label>
+                              <label className="flex items-center">
+                                <input
+                                  type="radio"
+                                  className="mr-2"
+                                  checked={imageStyle === 'whiteboard_color'}
+                                  onChange={() => setImageStyle('whiteboard_color')}
+                                  disabled={isGenerating}
+                                />
+                                <span>Hand-drawn illustration, whiteboard style</span>
+                              </label>
+                              <label className="flex items-center">
+                                <input
+                                  type="radio"
+                                  className="mr-2"
+                                  checked={imageStyle === 'clipart'}
+                                  onChange={() => setImageStyle('clipart')}
+                                  disabled={isGenerating}
+                                />
+                                <span>Clipart (simple, flat)</span>
+                              </label>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="grid grid-cols-1 gap-3">
+                        <div className="text-sm font-medium text-gray-700 mb-2">Animation Style</div>
+                        {([
+                          { 
+                            id: 'whiteboard_bw', 
+                            name: 'Classic Whiteboard', 
+                            description: 'Hand-drawn black & white with bold marker lines',
+                            imageStyle: 'whiteboard_bw',
+                            stickerStyle: 'whiteboard illustration'
+                          },
+                          { 
+                            id: 'whiteboard_color', 
+                            name: 'Color Whiteboard', 
+                            description: 'Hand-drawn color illustration revealed by drawing strokes',
+                            imageStyle: 'whiteboard_color',
+                            stickerStyle: 'whiteboard illustration'
+                          },
+                          { 
+                            id: 'cute_cartoon', 
+                            name: 'Cute Cartoon', 
+                            description: 'Rounded shapes, friendly cartoon look',
+                            imageStyle: 'whiteboard_bw',
+                            stickerStyle: 'cute cartoon'
+                          },
+                          { 
+                            id: 'clip_art', 
+                            name: 'Clip Art', 
+                            description: 'Flat clip-art style, simple shapes',
+                            imageStyle: 'clipart',
+                            stickerStyle: 'clip art'
+                          },
+                        ] as Array<{ id: string; name: string; description: string; imageStyle: string; stickerStyle: string }>).map((style) => (
+                          <div
+                            key={style.id}
+                            className={`border rounded-lg p-4 cursor-pointer transition-colors ${
+                              imageStyle === style.imageStyle && stickerStyle === style.stickerStyle
+                                ? 'border-blue-500 bg-blue-50'
+                                : 'border-gray-200 hover:border-gray-300'
+                            }`}
+                            onClick={() => {
+                              setImageStyle(style.imageStyle)
+                              setStickerStyle(style.stickerStyle)
+                            }}
+                          >
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <h4 className="font-medium text-gray-900 mb-1">{style.name}</h4>
+                                <p className="text-sm text-gray-600 mb-2">{style.description}</p>
+                              </div>
+                              <div className="ml-4">
+                                <input
+                                  type="radio"
+                                  checked={imageStyle === style.imageStyle && stickerStyle === style.stickerStyle}
+                                  onChange={() => {
+                                    setImageStyle(style.imageStyle)
+                                    setStickerStyle(style.stickerStyle)
+                                  }}
+                                  disabled={isGenerating}
+                                  className="text-blue-600 focus:ring-blue-500"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Avatar and Voice Selectors - Only show when avatar is selected */}
+              {useAvatar && (
+                <div className="space-y-4">
+                  {/* Avatar Selector */}
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Select Avatar
+                        </label>
+                        {availableAvatars.length > 0 ? (
+                          <select
+                            value={selectedAvatarId}
+                            onChange={(e) => setSelectedAvatarId(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            disabled={isGenerating}
+                          >
+                            {availableAvatars.map((avatar) => (
+                              <option key={avatar.avatar_id} value={avatar.avatar_id}>
+                                {avatar.avatar_name} ({avatar.gender})
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <div className="text-sm text-gray-500">
+                            No avatars available. Please check your HeyGen API key.
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Avatar Preview */}
+                      {selectedAvatarId && availableAvatars.length > 0 && (
+                        <div className="flex items-center space-x-3 p-3 bg-white rounded-md border border-gray-200">
+                          {(() => {
+                            const selectedAvatar = availableAvatars.find(avatar => avatar.avatar_id === selectedAvatarId)
+                            return selectedAvatar ? (
+                              <>
+                                {selectedAvatar.preview_image_url && (
+                                  <img
+                                    src={selectedAvatar.preview_image_url}
+                                    alt={selectedAvatar.avatar_name}
+                                    className="w-12 h-12 object-cover rounded-md border border-gray-200"
+                                  />
+                                )}
+                                <div>
+                                  <p className="font-medium text-gray-900">{selectedAvatar.avatar_name}</p>
+                                  <p className="text-sm text-gray-600">Gender: {selectedAvatar.gender}</p>
+                                </div>
+                              </>
+                            ) : null
+                          })()}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Voice Selector */}
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Select Voice
+                      </label>
+                      {availableVoices.length > 0 ? (
+                        <select
+                          value={selectedVoiceId}
+                          onChange={(e) => setSelectedVoiceId(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          disabled={isGenerating}
+                        >
+                          {availableVoices.map((voice) => (
+                            <option key={voice.voice_id} value={voice.voice_id}>
+                              {voice.name} ({voice.gender})
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <div className="text-sm text-gray-500">
+                          No voices available. Please check your HeyGen API key.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Avatar Composition Mode */}
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Avatar Position
+                      </label>
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-1 gap-3">
+                          <div
+                            className={`border rounded-lg p-4 cursor-pointer transition-colors ${
+                              avatarMode === 'fullscreen'
+                                ? 'border-blue-500 bg-blue-50'
+                                : 'border-gray-200 hover:border-gray-300'
+                            }`}
+                            onClick={() => setAvatarMode('fullscreen')}
+                          >
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <h4 className="font-medium text-gray-900 mb-1">Fullscreen Avatar</h4>
+                                <p className="text-sm text-gray-600">Avatar speaks fullscreen for each scene</p>
+                              </div>
+                              <div className="ml-4">
+                                <input
+                                  type="radio"
+                                  checked={avatarMode === 'fullscreen'}
+                                  onChange={() => setAvatarMode('fullscreen')}
+                                  disabled={isGenerating}
+                                  className="text-blue-600 focus:ring-blue-500"
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div
+                            className={`border rounded-lg p-4 cursor-pointer transition-colors ${
+                              avatarMode === 'corner'
+                                ? 'border-blue-500 bg-blue-50'
+                                : 'border-gray-200 hover:border-gray-300'
+                            }`}
+                            onClick={() => setAvatarMode('corner')}
+                          >
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <h4 className="font-medium text-gray-900 mb-1">Corner Avatar</h4>
+                                <p className="text-sm text-gray-600">Avatar in bottom corner while showing images/videos</p>
+                              </div>
+                              <div className="ml-4">
+                                <input
+                                  type="radio"
+                                  checked={avatarMode === 'corner'}
+                                  onChange={() => setAvatarMode('corner')}
+                                  disabled={isGenerating}
+                                  className="text-blue-600 focus:ring-blue-500"
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div
+                            className={`border rounded-lg p-4 cursor-pointer transition-colors ${
+                              avatarMode === 'alternating'
+                                ? 'border-blue-500 bg-blue-50'
+                                : 'border-gray-200 hover:border-gray-300'
+                            }`}
+                            onClick={() => setAvatarMode('alternating')}
+                          >
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <h4 className="font-medium text-gray-900 mb-1">Alternating Mode</h4>
+                                <p className="text-sm text-gray-600">Alternate between avatar speaking and images/videos</p>
+                              </div>
+                              <div className="ml-4">
+                                <input
+                                  type="radio"
+                                  checked={avatarMode === 'alternating'}
+                                  onChange={() => setAvatarMode('alternating')}
+                                  disabled={isGenerating}
+                                  className="text-blue-600 focus:ring-blue-500"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <div className="bg-white rounded-md p-3 border border-gray-200">
+                          <div className="text-sm">
+                            <strong className="text-gray-700">Note:</strong>
+                            <div className="mt-1 text-gray-600">
+                              Avatar composition can be edited after video creation. You can change how the avatar appears in each scene during the editing process.
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {error && (
                 <div className="bg-red-50 border border-red-200 rounded-md p-3">
@@ -615,6 +1144,12 @@ export default function Home() {
                     )}
 
                     <div className="flex space-x-2">
+                      <button
+                        onClick={() => window.location.href = `/editor/${currentJob.id}`}
+                        className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors"
+                      >
+                        Edit Video
+                      </button>
                       <button
                         onClick={resetForm}
                         className="flex-1 bg-gray-600 text-white py-2 px-4 rounded-md hover:bg-gray-700 transition-colors"
